@@ -39,6 +39,8 @@ contract StakingReward {
     // last recorded cumulativeRewardPerToken for reward accounting
     mapping(address user => uint256 checkpoint) public userLastCumulativeRewardsPerToken;
 
+    error AmountIsZero();
+
     constructor(address _stakedToken, address _rewardToken, uint256 _totalReward, uint256 _rewardDuration) {
         stakedToken = IERC20(_stakedToken);
         rewardToken = IERC20(_rewardToken);
@@ -46,9 +48,61 @@ contract StakingReward {
         rewardsEndTime = block.timestamp + _rewardDuration;
     }
 
-    function deposit(uint256 amount) external { }
-    function withdraw(uint256 amount) external { }
-    function claim() external { }
+    function deposit(uint256 amount) external {
+        if (amount == 0) revert AmountIsZero();
+
+        _sync(msg.sender);
+        stakedBalances[msg.sender] += amount;
+        totalTokensStaked += amount;
+
+        // take tokens from the user
+        stakedToken.transferFrom(msg.sender, address(this), amount);
+    }
+
+    function withdraw(uint256 amount) external {
+        if (amount == 0) revert AmountIsZero();
+
+        _sync(msg.sender);
+        stakedBalances[msg.sender] -= amount;
+        totalTokensStaked -= amount;
+
+        // send tokens to the user
+        stakedToken.transfer(msg.sender, amount);
+
+        // if the user is withdrawing full amount then send him the rewards as well
+    }
+
+    function claim() external {
+        _sync(msg.sender);
+
+        uint256 _pendingReward = pendingRewards[msg.sender];
+        pendingRewards[msg.sender] = 0;
+
+        rewardToken.transfer(msg.sender, _pendingReward);
+    }
+
+    function _sync(address user) internal {
+        uint256 _timeNow = _lastEffectiveTime();
+
+        // Update global reward accumulator
+        cumulativeRewardPerToken = getCumulativeRewardPerToken({
+            current: cumulativeRewardPerToken,
+            timeElapsed: _timeNow - lastRewardUpdateTime,
+            rate: rewardRatePerSecond,
+            totalStaked: totalTokensStaked
+        });
+        lastRewardUpdateTime = _timeNow;
+
+        // Update user-specific reward state
+        pendingRewards[user] = getUserPendingReward({
+            userStake: stakedBalances[user],
+            globalAccumulator: cumulativeRewardPerToken,
+            userCheckpoint: userLastCumulativeRewardsPerToken[user],
+            alreadyPending: pendingRewards[user]
+        });
+
+        userLastCumulativeRewardsPerToken[user] = cumulativeRewardPerToken;
+    }
 
     function getCumulativeRewardPerToken(
         uint256 current,
