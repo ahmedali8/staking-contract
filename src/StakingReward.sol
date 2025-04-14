@@ -15,4 +15,8 @@ contract StakingReward {
         rewardRatePerSecond = _totalReward / _rewardDuration;
         rewardsEndTime = block.timestamp + _rewardDuration;
     }
+
+    function deposit(uint256 amount) external { }
+    function withdraw(uint256 amount) external { }
+    function claim() external { }
 }
