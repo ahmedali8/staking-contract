@@ -3,7 +3,9 @@ pragma solidity >=0.8.23 <0.9.0;
 
 import { console2 } from "forge-std/src/console2.sol";
 import { Base_Test } from "./Base.t.sol";
+import { stdError } from "forge-std/src/StdError.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import { Staking } from "../src/Staking.sol";
 
 contract Staking_Test is Base_Test {
@@ -21,6 +23,11 @@ contract Staking_Test is Base_Test {
         uint256 expectedEndTime = APRIL_1_2025 + 365 days;
         uint256 actualEndTime = staking.rewardsEndTime();
         assertEq(actualEndTime, expectedEndTime, "Reward end time should match expected value");
+    }
+
+    function test_GetUserPendingRewardReturnsZeroWithoutDeposit() public view {
+        uint256 pending = staking.getUserPendingReward(users.eve);
+        assertEq(pending, 0, "User with no deposit should have 0 pending rewards");
     }
 
     function test_RevertWhen_DepositAmountIsZero() public {
@@ -87,6 +94,15 @@ contract Staking_Test is Base_Test {
         assertEq(staking.pendingRewards(users.alice), 0, "Should be zero after explicit claim");
     }
 
+    function test_RevertWhen_WithdrawWithoutDeposit() public {
+        // Eve has never deposited
+        resetPrank(users.eve);
+
+        // Expect panic: arithmetic underflow or overflow
+        vm.expectRevert(stdError.arithmeticError);
+        staking.withdraw(1 ether);
+    }
+
     function test_ClaimUpdatesRewardAndZeroesOut() public {
         resetPrank(users.alice);
 
@@ -122,5 +138,29 @@ contract Staking_Test is Base_Test {
 
         // Global state remains
         assertEq(staking.totalTokensStaked(), 100 ether, "Global total should remain the same");
+    }
+
+    function test_RevertWhen_ClaimWithoutDeposit() public {
+        // Eve has not deposited
+        resetPrank(users.eve);
+
+        assertEq(staking.stakedBalances(users.eve), 0, "Eve should have no staked tokens");
+
+        vm.expectRevert(abi.encodeWithSelector(Staking.NoStakedTokens.selector));
+        staking.claim();
+    }
+
+    function test_RevertWhen_ClaimWithoutPendingRewards() public {
+        // Alice has deposited but no rewards have been accrued
+        resetPrank(users.alice);
+
+        uint256 depositAmount = 100 ether;
+        tokenT.approve(address(staking), depositAmount);
+        staking.deposit(depositAmount);
+
+        assertEq(staking.pendingRewards(users.alice), 0, "Alice should have no pending rewards");
+
+        vm.expectRevert(abi.encodeWithSelector(Staking.NoPendingRewardsToClaim.selector));
+        staking.claim();
     }
 }
