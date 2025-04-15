@@ -15,18 +15,18 @@ contract Staking_Test is Base_Test {
 
     function test_RewardRatePerSecond() public view {
         uint256 expectedRewardRate = 31_709_791_983_764_586; // 0.031709791983764586 tokenR per second
-        uint256 actualRewardRate = staking.rewardRatePerSecond();
+        uint256 actualRewardRate = staking.REWARD_RATE_PER_SECOND();
         assertEq(actualRewardRate, expectedRewardRate, "Reward rate per second should match expected value");
     }
 
     function test_RewardEndTime() public view {
         uint256 expectedEndTime = APRIL_1_2025 + 365 days;
-        uint256 actualEndTime = staking.rewardsEndTime();
+        uint256 actualEndTime = staking.REWARDS_END_TIME();
         assertEq(actualEndTime, expectedEndTime, "Reward end time should match expected value");
     }
 
     function test_GetUserPendingRewardReturnsZeroWithoutDeposit() public view {
-        uint256 pending = staking.getUserPendingReward(users.eve);
+        uint256 pending = staking.getTotalEarnedReward(users.eve);
         assertEq(pending, 0, "User with no deposit should have 0 pending rewards");
     }
 
@@ -86,12 +86,12 @@ contract Staking_Test is Base_Test {
         assertEq(staking.totalTokensStaked(), 50 ether, "Total staked should reduce");
 
         // Reward must not be auto-claimed
-        uint256 pending = staking.pendingRewards(users.alice);
+        uint256 pending = staking.storedRewardBalance(users.alice);
         assertGt(pending, 0, "Reward should still be pending after withdraw");
 
         // Claim to finalize test
         staking.claim();
-        assertEq(staking.pendingRewards(users.alice), 0, "Should be zero after explicit claim");
+        assertEq(staking.storedRewardBalance(users.alice), 0, "Should be zero after explicit claim");
     }
 
     function test_RevertWhen_WithdrawWithoutDeposit() public {
@@ -115,8 +115,8 @@ contract Staking_Test is Base_Test {
         vm.warp(block.timestamp + increaseTime);
 
         uint256 rewardBefore = tokenR.balanceOf(users.alice);
-        uint256 pending = staking.getUserPendingReward(users.alice);
-        uint256 rewardRate = staking.rewardRatePerSecond();
+        uint256 pending = staking.getTotalEarnedReward(users.alice);
+        uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
 
         assertApproxEqAbs(pending, rewardRate * increaseTime, 60, "Alice should have ~0.3171 tokenR pending");
 
@@ -133,8 +133,8 @@ contract Staking_Test is Base_Test {
 
         assertEq(claimed, 0.3170979198376458 ether, "Alice should receive tokenR");
 
-        // Assert that pendingRewards has been zeroed out
-        assertEq(staking.pendingRewards(users.alice), 0, "Pending reward must be zero after claim");
+        // Assert that storedRewardBalance has been zeroed out
+        assertEq(staking.storedRewardBalance(users.alice), 0, "Pending reward must be zero after claim");
 
         // Global state remains
         assertEq(staking.totalTokensStaked(), 100 ether, "Global total should remain the same");
@@ -158,7 +158,7 @@ contract Staking_Test is Base_Test {
         tokenT.approve(address(staking), depositAmount);
         staking.deposit(depositAmount);
 
-        assertEq(staking.pendingRewards(users.alice), 0, "Alice should have no pending rewards");
+        assertEq(staking.storedRewardBalance(users.alice), 0, "Alice should have no pending rewards");
 
         vm.expectRevert(abi.encodeWithSelector(Staking.NoPendingRewardsToClaim.selector));
         staking.claim();

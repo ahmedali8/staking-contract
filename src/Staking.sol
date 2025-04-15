@@ -22,22 +22,22 @@ contract Staking {
     uint256 private constant PRECISION = 1e18;
 
     /// @notice The token that users stake (e.g., tokenT)
-    IERC20 public immutable stakedToken;
+    IERC20 public immutable STAKED_TOKEN;
 
     /// @notice The token that users earn as a reward (e.g., tokenR)
-    IERC20 public immutable rewardToken;
+    IERC20 public immutable REWARD_TOKEN;
 
     /// @notice Reward tokens emitted per second
-    uint256 public immutable rewardRatePerSecond;
+    uint256 public immutable REWARD_RATE_PER_SECOND;
 
     /// @notice Timestamp after which no new rewards are emitted
-    uint256 public immutable rewardsEndTime;
+    uint256 public immutable REWARDS_END_TIME;
 
     /// @notice Last timestamp when global rewards were updated
     uint256 public lastRewardUpdateTime;
 
     /// @notice Accumulator: total rewards per token staked (scaled by 1e18)
-    uint256 public cumulativeRewardPerToken;
+    uint256 public rewardAccumulator;
 
     /// @notice Total amount of staked tokens across all users
     uint256 public totalTokensStaked;
@@ -47,10 +47,10 @@ contract Staking {
 
     // unclaimed, accrued rewards in tokenR
     // How much reward this user has earned up until the last time we updated their state?
-    mapping(address user => uint256 rewardAmount) public pendingRewards;
+    mapping(address user => uint256 rewardAmount) public storedRewardBalance;
 
-    // last recorded cumulativeRewardPerToken for reward accounting
-    mapping(address user => uint256 checkpoint) public userLastCumulativeRewardsPerToken;
+    // last recorded rewardAccumulator for reward accounting
+    mapping(address user => uint256 checkpoint) public userRewardCheckpoint;
 
     error AmountIsZero();
     error NoPendingRewardsToClaim();
@@ -62,10 +62,10 @@ contract Staking {
     /// @param _totalReward The total amount of reward tokens to be distributed
     /// @param _rewardDuration The duration (in seconds) over which the rewards will be distributed
     constructor(IERC20 _stakedToken, IERC20 _rewardToken, uint256 _totalReward, uint256 _rewardDuration) {
-        stakedToken = _stakedToken;
-        rewardToken = _rewardToken;
-        rewardRatePerSecond = _totalReward / _rewardDuration;
-        rewardsEndTime = block.timestamp + _rewardDuration;
+        STAKED_TOKEN = _stakedToken;
+        REWARD_TOKEN = _rewardToken;
+        REWARD_RATE_PER_SECOND = _totalReward / _rewardDuration;
+        REWARDS_END_TIME = block.timestamp + _rewardDuration;
     }
 
     /// @notice Deposit tokenT and start earning rewards
@@ -80,7 +80,7 @@ contract Staking {
         totalTokensStaked += amount;
 
         // take tokens from the user
-        stakedToken.transferFrom(msg.sender, address(this), amount);
+        STAKED_TOKEN.transferFrom(msg.sender, address(this), amount);
     }
 
     /// @notice Withdraw previously staked tokenT
@@ -95,7 +95,7 @@ contract Staking {
         totalTokensStaked -= amount;
 
         // send tokens to the user
-        stakedToken.transfer(msg.sender, amount);
+        STAKED_TOKEN.transfer(msg.sender, amount);
 
         // TODO: if the user is withdrawing full amount then send him the rewards as well
     }
@@ -105,14 +105,14 @@ contract Staking {
     /// and reset the user's pending rewards to zero.
     function claim() external {
         if (stakedBalances[msg.sender] == 0) revert NoStakedTokens();
-        if (pendingRewards[msg.sender] == 0) revert NoPendingRewardsToClaim();
+        if (storedRewardBalance[msg.sender] == 0) revert NoPendingRewardsToClaim();
 
         _sync(msg.sender);
 
-        uint256 _pendingReward = pendingRewards[msg.sender];
-        pendingRewards[msg.sender] = 0;
+        uint256 _pendingReward = storedRewardBalance[msg.sender];
+        storedRewardBalance[msg.sender] = 0;
 
-        rewardToken.transfer(msg.sender, _pendingReward);
+        REWARD_TOKEN.transfer(msg.sender, _pendingReward);
     }
 
     /// @dev Updates global and user-specific reward state
@@ -120,13 +120,13 @@ contract Staking {
         uint256 _timeNow = _lastEffectiveTime();
 
         // Update global reward accumulator
-        cumulativeRewardPerToken = getCumulativeRewardPerToken();
+        rewardAccumulator = getCumulativeRewardPerToken();
         lastRewardUpdateTime = _timeNow;
 
         // Update user-specific reward state
-        pendingRewards[user] = getUserPendingReward(user);
+        storedRewardBalance[user] = getTotalEarnedReward(user);
 
-        userLastCumulativeRewardsPerToken[user] = cumulativeRewardPerToken;
+        userRewardCheckpoint[user] = rewardAccumulator;
     }
 
     /// @notice Calculates the cumulative reward per token staked.
@@ -146,24 +146,24 @@ contract Staking {
     ///   - Rewards: 10 tokenR
     ///   - rewardPerToken = 10 / 400 = 0.025 -> 0.025e18
     ///
-    /// Total cumulativeRewardPerToken = 0.1e18 + 0.025e18 = 0.125e18
+    /// Total rewardAccumulator = 0.1e18 + 0.025e18 = 0.125e18
     function getCumulativeRewardPerToken() public view returns (uint256) {
         uint256 _timeElapsed = _lastEffectiveTime() - lastRewardUpdateTime;
-        if (totalTokensStaked == 0) return cumulativeRewardPerToken;
-        uint256 _rewardIncrement = (_timeElapsed * rewardRatePerSecond * PRECISION) / totalTokensStaked;
-        return cumulativeRewardPerToken + _rewardIncrement;
+        if (totalTokensStaked == 0) return rewardAccumulator;
+        uint256 _rewardIncrement = (_timeElapsed * REWARD_RATE_PER_SECOND * PRECISION) / totalTokensStaked;
+        return rewardAccumulator + _rewardIncrement;
     }
 
     /// @notice Calculates the pending reward for a user.
     /// @dev Computes the difference between the user's last recorded global checkpoint and the latest one,
     /// then multiplies that delta by the user's current stake to compute newly earned rewards.
     /// Adds that to any previously pending reward that wasn't claimed yet.
-    /// pendingRewards[user] + new reward since last sync (based on stake × delta)
+    /// storedRewardBalance[user] + new reward since last sync (based on stake × delta)
     ///
     /// Example:
     /// Continuing from above:
     ///   - At second 20:
-    ///   - cumulativeRewardPerToken = 0.125e18
+    ///   - rewardAccumulator = 0.125e18
     ///
     /// Alice:
     ///   - staked 100 tokenT
@@ -176,13 +176,13 @@ contract Staking {
     ///   - checkpoint = 0.1e18 (he staked at time = 10)
     ///   - delta = 0.125e18 - 0.1e18 = 0.025e18
     ///   - newReward = 300 * 0.025e18 / 1e18 = 7.5 tokenR
-    function getUserPendingReward(address user) public view returns (uint256) {
-        uint256 _rewardDelta = getCumulativeRewardPerToken() - userLastCumulativeRewardsPerToken[user];
+    function getTotalEarnedReward(address user) public view returns (uint256) {
+        uint256 _rewardDelta = getCumulativeRewardPerToken() - userRewardCheckpoint[user];
         uint256 _newlyAccrued = (stakedBalances[user] * _rewardDelta) / PRECISION;
-        return pendingRewards[user] + _newlyAccrued;
+        return storedRewardBalance[user] + _newlyAccrued;
     }
 
     function _lastEffectiveTime() internal view returns (uint256) {
-        return block.timestamp < rewardsEndTime ? block.timestamp : rewardsEndTime;
+        return block.timestamp < REWARDS_END_TIME ? block.timestamp : REWARDS_END_TIME;
     }
 }
