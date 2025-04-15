@@ -46,12 +46,15 @@ contract Staking {
     mapping(address user => uint256 stakedAmount) public stakedBalances;
 
     // unclaimed, accrued rewards in tokenR
+    // How much reward this user has earned up until the last time we updated their state?
     mapping(address user => uint256 rewardAmount) public pendingRewards;
 
     // last recorded cumulativeRewardPerToken for reward accounting
     mapping(address user => uint256 checkpoint) public userLastCumulativeRewardsPerToken;
 
     error AmountIsZero();
+    error NoPendingRewardsToClaim();
+    error NoStakedTokens();
 
     /// @notice Constructor to initialize the staking contract.
     /// @param _stakedToken The token that users will stake (e.g., tokenT)
@@ -101,6 +104,9 @@ contract Staking {
     /// @dev This function will transfer the pending rewards from the contract to the user
     /// and reset the user's pending rewards to zero.
     function claim() external {
+        if (stakedBalances[msg.sender] == 0) revert NoStakedTokens();
+        if (pendingRewards[msg.sender] == 0) revert NoPendingRewardsToClaim();
+
         _sync(msg.sender);
 
         uint256 _pendingReward = pendingRewards[msg.sender];
@@ -152,6 +158,7 @@ contract Staking {
     /// @dev Computes the difference between the user's last recorded global checkpoint and the latest one,
     /// then multiplies that delta by the user's current stake to compute newly earned rewards.
     /// Adds that to any previously pending reward that wasn't claimed yet.
+    /// pendingRewards[user] + new reward since last sync (based on stake × delta)
     ///
     /// Example:
     /// Continuing from above:
