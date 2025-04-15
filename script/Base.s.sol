@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.8.29 <0.9.0;
+pragma solidity >=0.8.23 <=0.9.0;
 
 import { Script } from "forge-std/src/Script.sol";
 
@@ -13,28 +13,31 @@ abstract contract BaseScript is Script {
     /// @dev The address of the transaction broadcaster.
     address internal broadcaster;
 
-    /// @dev Used to derive the broadcaster's address if $ETH_FROM is not defined.
+    /// @dev Used to derive the broadcaster's address if $PRIVATE_KEY is not defined.
     string internal mnemonic;
+
+    /// @dev The private key of the transaction broadcaster.
+    uint256 private broadcasterPK;
 
     /// @dev Initializes the transaction broadcaster like this:
     ///
-    /// - If $ETH_FROM is defined, use it.
+    /// - If $PRIVATE_KEY is defined, use it.
     /// - Otherwise, derive the broadcaster address from $MNEMONIC.
     /// - If $MNEMONIC is not defined, default to a test mnemonic.
-    ///
-    /// The use case for $ETH_FROM is to specify the broadcaster key and its address via the command line.
     constructor() {
-        address from = vm.envOr({ name: "ETH_FROM", defaultValue: address(0) });
-        if (from != address(0)) {
-            broadcaster = from;
+        uint256 privateKey = vm.envOr({ name: "PRIVATE_KEY", defaultValue: uint256(0) });
+
+        if (privateKey != 0) {
+            broadcaster = vm.addr(privateKey);
+            broadcasterPK = privateKey;
         } else {
             mnemonic = vm.envOr({ name: "MNEMONIC", defaultValue: TEST_MNEMONIC });
-            (broadcaster,) = deriveRememberKey({ mnemonic: mnemonic, index: 0 });
+            (broadcaster, broadcasterPK) = deriveRememberKey({ mnemonic: mnemonic, index: 0 });
         }
     }
 
     modifier broadcast() {
-        vm.startBroadcast(broadcaster);
+        vm.startBroadcast(broadcasterPK);
         _;
         vm.stopBroadcast();
     }
