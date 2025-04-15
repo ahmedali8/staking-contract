@@ -60,6 +60,33 @@ contract Staking_Test is Base_Test {
         assertEq(cumulativeReward, 0, "cumulativeRewardPerToken should remain 0 on first deposit");
     }
 
+    function test_WithdrawReducesBalance() public {
+        resetPrank(users.alice);
+
+        uint256 depositAmount = 100 ether;
+        tokenT.approve(address(staking), depositAmount);
+        staking.deposit(depositAmount);
+
+        // Warp 5 seconds (so some rewards accumulate)
+        vm.warp(block.timestamp + 5);
+
+        // Withdraw half
+        uint256 withdrawAmount = 50 ether;
+        staking.withdraw(withdrawAmount);
+
+        // Check balances
+        assertEq(staking.stakedBalances(users.alice), 50 ether, "Alice's stake should reduce");
+        assertEq(staking.totalTokensStaked(), 50 ether, "Total staked should reduce");
+
+        // Reward must not be auto-claimed
+        uint256 pending = staking.pendingRewards(users.alice);
+        assertGt(pending, 0, "Reward should still be pending after withdraw");
+
+        // Claim to finalize test
+        staking.claim();
+        assertEq(staking.pendingRewards(users.alice), 0, "Should be zero after explicit claim");
+    }
+
     function test_ClaimUpdatesRewardAndZeroesOut() public {
         resetPrank(users.alice);
 
