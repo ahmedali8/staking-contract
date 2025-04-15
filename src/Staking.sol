@@ -17,7 +17,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 //   For 10-20 seconds: 10 * 300/400 = 7.5 tokenR
 //   Total: 7.5 tokenR
 
-contract StakingReward {
+contract Staking {
     // Used for scaling fixed point math (1e18 = 1 token)
     uint256 private constant PRECISION = 1e18;
 

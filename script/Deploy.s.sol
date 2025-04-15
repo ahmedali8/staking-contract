@@ -5,7 +5,7 @@ import { BaseScript } from "./Base.s.sol";
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import { StakingReward } from "../src/StakingReward.sol";
+import { Staking } from "../src/Staking.sol";
 import { TokenR } from "../src/TokenR.sol";
 import { TokenT } from "../src/TokenT.sol";
 
@@ -17,11 +17,11 @@ contract Deploy is BaseScript {
     )
         public
         broadcast
-        returns (TokenT tokenT, TokenR tokenR, StakingReward stakingReward)
+        returns (TokenT tokenT, TokenR tokenR, Staking staking)
     {
         tokenT = deployTokenT();
         tokenR = deployTokenR();
-        stakingReward = deployStakingReward(tokenT, tokenR, totalReward, rewardDuration);
+        staking = deployStakingReward(tokenT, tokenR, totalReward, rewardDuration);
     }
 
     function deployTokenT() public returns (TokenT tokenT) {
@@ -41,9 +41,9 @@ contract Deploy is BaseScript {
         uint256 rewardDuration
     )
         public
-        returns (StakingReward stakingReward)
+        returns (Staking staking)
     {
-        stakingReward = new StakingReward(stakedToken, rewardToken, totalReward, rewardDuration);
-        vm.label(address(stakingReward), "StakingReward");
+        staking = new Staking(stakedToken, rewardToken, totalReward, rewardDuration);
+        vm.label(address(staking), "Staking");
     }
 }

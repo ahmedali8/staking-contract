@@ -7,7 +7,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockTokenR } from "./mocks/MockTokenR.sol";
 import { MockTokenT } from "./mocks/MockTokenT.sol";
 
-import { StakingReward } from "../src/StakingReward.sol";
+import { Staking } from "../src/Staking.sol";
 
 import { Users } from "./utils/Types.sol";
 
@@ -30,7 +30,7 @@ abstract contract Base_Test is Test {
 
     IERC20 internal tokenR;
     IERC20 internal tokenT;
-    StakingReward internal stakingReward;
+    Staking internal staking;
 
     /*//////////////////////////////////////////////////////////////
                             SET-UP FUNCTION
@@ -62,7 +62,7 @@ abstract contract Base_Test is Test {
         vm.startPrank({ msgSender: users.deployer });
 
         // Deploy the staking reward contract
-        stakingReward = new StakingReward({
+        staking = new Staking({
             _stakedToken: tokenT,
             _rewardToken: tokenR,
             _totalReward: TOTAL_REWARD,
@@ -70,10 +70,10 @@ abstract contract Base_Test is Test {
         });
 
         // Label the deployed staking reward contract
-        vm.label(address(stakingReward), "StakingReward");
+        vm.label(address(staking), "Staking");
 
-        // Deal total reward tokenR to the StakingReward contract
-        deal({ token: address(tokenR), to: address(stakingReward), give: TOTAL_REWARD, adjust: true });
+        // Deal total reward tokenR to the Staking contract
+        deal({ token: address(tokenR), to: address(staking), give: TOTAL_REWARD, adjust: true });
 
         // Set sender as the default caller for the tests
         resetPrank({ msgSender: users.sender });
