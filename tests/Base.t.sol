@@ -20,6 +20,7 @@ abstract contract Base_Test is Test {
     uint40 internal constant APRIL_1_2025 = 1_743_462_000;
     uint256 internal constant TOTAL_REWARD = 1_000_000 ether;
     uint256 internal constant REWARD_DURATION = 365 days;
+    uint256 internal constant PRECISION = 1e18;
 
     Users internal users;
 
@@ -37,6 +38,9 @@ abstract contract Base_Test is Test {
 
     /// @dev A setup function invoked before each test case
     function setUp() public virtual {
+        // Warp to April 1, 2025 at 00:00 UTC to provide a more realistic testing environment
+        vm.warp({ newTimestamp: APRIL_1_2025 });
+
         // Deploy the mock tokens
         tokenR = new MockTokenR();
         tokenT = new MockTokenT();
@@ -68,11 +72,11 @@ abstract contract Base_Test is Test {
         // Label the deployed staking reward contract
         vm.label(address(stakingReward), "StakingReward");
 
+        // Deal total reward tokenR to the StakingReward contract
+        deal({ token: address(tokenR), to: address(stakingReward), give: TOTAL_REWARD, adjust: true });
+
         // Set sender as the default caller for the tests
         resetPrank({ msgSender: users.sender });
-
-        // Warp to April 1, 2025 at 00:00 UTC to provide a more realistic testing environment
-        vm.warp({ newTimestamp: APRIL_1_2025 });
     }
 
     /*//////////////////////////////////////////////////////////////
