@@ -58,9 +58,9 @@ contract StakingReward {
     /// @param _rewardToken The token that users will earn as a reward (e.g., tokenR)
     /// @param _totalReward The total amount of reward tokens to be distributed
     /// @param _rewardDuration The duration (in seconds) over which the rewards will be distributed
-    constructor(address _stakedToken, address _rewardToken, uint256 _totalReward, uint256 _rewardDuration) {
-        stakedToken = IERC20(_stakedToken);
-        rewardToken = IERC20(_rewardToken);
+    constructor(IERC20 _stakedToken, IERC20 _rewardToken, uint256 _totalReward, uint256 _rewardDuration) {
+        stakedToken = _stakedToken;
+        rewardToken = _rewardToken;
         rewardRatePerSecond = _totalReward / _rewardDuration;
         rewardsEndTime = block.timestamp + _rewardDuration;
     }
