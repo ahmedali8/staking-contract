@@ -376,4 +376,37 @@ contract Staking_Test is Base_Test {
         Total Distributed         |         |                                                 | 2853881278538812740
         */
     }
+
+    function testFuzz_DepositAndClaim(uint96 rawAmount, uint40 warpTime) public {
+        // === Bounds ===
+        // Max 1e24 = 1 million tokens (assuming 18 decimals)
+        uint256 amount = bound(uint256(rawAmount), 1e18, 1e24); // at least 1 token
+        uint256 time = bound(uint256(warpTime), 1, 30 days); // at least 1s
+
+        // mint tokens to alice
+        tokenT.mint(users.alice, amount);
+
+        resetPrank(users.alice);
+        tokenT.approve(address(staking), amount);
+        staking.deposit(amount);
+
+        // Warp forward in time
+        vm.warp(block.timestamp + time);
+
+        // Get expected reward
+        uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
+        uint256 expectedReward = rewardRate * time;
+
+        // Check pending reward is approximately what we expect
+        uint256 pending = staking.getTotalEarnedReward(users.alice);
+        assertApproxEqAbs(pending, expectedReward, 1, "Pending reward mismatch");
+
+        // Claim and check token balance
+        staking.claim();
+        uint256 actual = tokenR.balanceOf(users.alice);
+        assertApproxEqAbs(actual, expectedReward, 1, "Claimed reward mismatch");
+
+        // Ensure reward balance cleared
+        assertEq(staking.storedRewardBalances(users.alice), 0, "Stored reward not cleared");
+    }
 }
