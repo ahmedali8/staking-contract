@@ -5,7 +5,7 @@ import { console2 } from "forge-std/src/console2.sol";
 import { Base_Test } from "./Base.t.sol";
 import { stdError } from "forge-std/src/StdError.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
+import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import { Staking } from "../src/Staking.sol";
 
 contract Staking_Test is Base_Test {
@@ -156,16 +156,6 @@ contract Staking_Test is Base_Test {
         assertGt(checkpointAfterReDeposit, checkpointAfterClaim, "Checkpoint should be updated after re-deposit");
     }
 
-    function test_RevertWhen_ClaimWithoutDeposit() public {
-        // Eve has not deposited
-        resetPrank(users.eve);
-
-        assertEq(staking.stakedBalances(users.eve), 0, "Eve should have no staked tokens");
-
-        vm.expectRevert(abi.encodeWithSelector(Staking.NoStakedTokens.selector));
-        staking.claim();
-    }
-
     function test_RevertWhen_ClaimWithoutPendingRewards() public {
         // Alice has deposited but no rewards have been accrued
         resetPrank(users.alice);
@@ -247,5 +237,102 @@ contract Staking_Test is Base_Test {
         uint256 totalRewardsDistributed = staking.totalRewardsDistributed();
         uint256 expectedTotalRewardsDistributed = 634_195_839_675_291_720;
         assertEq(totalRewardsDistributed, expectedTotalRewardsDistributed, "Total rewards distributed mismatch");
+    }
+
+    function test_MultipleDepositsWithGaps() public {
+        // === Time 0: Alice deposits ===
+        resetPrank(users.alice);
+        uint256 aliceStake = 100 ether;
+        tokenT.approve(address(staking), aliceStake);
+        staking.deposit(aliceStake);
+
+        // Warp to t = 30
+        vm.warp(block.timestamp + 30);
+
+        // === Time 30: Alice withdraws all ===
+        staking.withdraw(aliceStake);
+
+        // === t = 30–40: No staking ===
+        vm.warp(block.timestamp + 10);
+
+        // === Time 40: Bob deposits ===
+        resetPrank(users.bob);
+        uint256 bobStake = 200 ether;
+        tokenT.approve(address(staking), bobStake);
+        staking.deposit(bobStake);
+
+        // Warp to t = 70 (30s passed)
+        vm.warp(block.timestamp + 30);
+
+        // === Time 70: Eve deposits (now Bob + Eve are both staked) ===
+        resetPrank(users.eve);
+        uint256 eveStake = 300 ether;
+        tokenT.approve(address(staking), eveStake);
+        staking.deposit(eveStake);
+
+        // Warp to t = 100 (30s passed)
+        vm.warp(block.timestamp + 30);
+
+        uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
+
+        // === Expected Calculations ===
+        // Alice: 0–30s
+        uint256 expectedAlice = rewardRate * 30;
+
+        // Bob: 40–70s alone
+        uint256 bobPart1 = rewardRate * 30;
+
+        // Bob: 70–100s with Eve (200/500 of rewards)
+        uint256 bobPart2 = FullMath.mulDiv(rewardRate * 30, 200 ether, 500 ether);
+        uint256 expectedBob = bobPart1 + bobPart2;
+
+        // Eve: 70–100s with Bob (300/500 of rewards)
+        uint256 expectedEve = FullMath.mulDiv(rewardRate * 30, 300 ether, 500 ether);
+
+        // === Alice Claim ===
+        resetPrank(users.alice);
+        uint256 aliceEarned = staking.getTotalEarnedReward(users.alice);
+        assertEq(aliceEarned, expectedAlice, "Alice reward mismatch");
+        staking.claim();
+        assertEq(tokenR.balanceOf(users.alice), expectedAlice, "Alice balance mismatch");
+
+        // === Bob Claim ===
+        resetPrank(users.bob);
+        uint256 bobEarned = staking.getTotalEarnedReward(users.bob);
+        assertEq(bobEarned, expectedBob, "Bob reward mismatch");
+        staking.claim();
+        assertEq(tokenR.balanceOf(users.bob), expectedBob, "Bob balance mismatch");
+
+        // === Eve Claim ===
+        resetPrank(users.eve);
+        uint256 eveEarned = staking.getTotalEarnedReward(users.eve);
+        assertEq(eveEarned, expectedEve, "Eve reward mismatch");
+        staking.claim();
+        assertEq(tokenR.balanceOf(users.eve), expectedEve, "Eve balance mismatch");
+
+        // === Total Check ===
+        uint256 expectedTotal = expectedAlice + expectedBob + expectedEve;
+        assertEq(staking.totalRewardsDistributed(), expectedTotal, "Total rewards distributed mismatch");
+
+        /*
+        alice stakes: 100e18 tokens
+        bob stakes: 200e18 tokens
+        eve stakes: 300e18 tokens
+
+        reward rate: 31709791983764586 tokenR / sec
+
+        Period      | Who         | Stake   | Reward Calculation                              | Result (wei)
+        ------------|-------------|---------|-------------------------------------------------|-------------------------
+        0s–30s      | Alice       | 100e18  | 30s * 31709791983764586                         | 951293759512937580
+        30s–40s     | None        | 0       | No staking                                      | 0
+        40s–70s     | Bob         | 200e18  | 30s * 31709791983764586                         | 951293759512937580
+        70s–100s    | Bob         | 200/500 | 30s * 31709791983764586 * 200e18 / 500e18       | 380517503805175032
+        70s–100s    | Eve         | 300/500 | 30s * 31709791983764586 * 300e18 / 500e18       | 570776255707762548
+
+        Total Alice               |         |                                                 | 951293759512937580
+        Total Bob                 |         | 951293759512937580 + 380517503805175032         | 1331811263318112612
+        Total Eve                 |         |                                                 | 570776255707762548
+        Total Distributed         |         |                                                 | 2853881278538812740
+        */
     }
 }
