@@ -379,9 +379,9 @@ contract Staking_Test is Base_Test {
 
     function testFuzz_DepositAndClaim(uint96 rawAmount, uint40 warpTime) public {
         // === Bounds ===
-        // Max 1e24 = 1 million tokens (assuming 18 decimals)
-        uint256 amount = bound(uint256(rawAmount), 1e18, 1e24); // at least 1 token
-        uint256 time = bound(uint256(warpTime), 1, 30 days); // at least 1s
+        // Max ONE_MILLION_TOKENS = 1 million tokens (assuming 18 decimals)
+        uint256 amount = bound(uint256(rawAmount), WAD, ONE_MILLION_TOKENS); // at least 1 token
+        uint256 time = bound(uint256(warpTime), ONE_SECOND, 30 days); // at least 1s
 
         // mint tokens to alice
         tokenT.mint(users.alice, amount);
@@ -418,10 +418,10 @@ contract Staking_Test is Base_Test {
     )
         public
     {
-        aliceAmount = uint96(bound(aliceAmount, 1e18, 1e24)); // 1 to 1M tokens
-        bobAmount = uint96(bound(bobAmount, 1e18, 1e24)); // 1 to 1M tokens
-        gapTime = uint40(bound(gapTime, 1, 1 days));
-        finalTime = uint40(bound(finalTime, gapTime + 1, 2 days)); // ensure it's after bob stake
+        aliceAmount = uint96(bound(aliceAmount, WAD, ONE_MILLION_TOKENS)); // 1 to 1M tokens
+        bobAmount = uint96(bound(bobAmount, WAD, ONE_MILLION_TOKENS)); // 1 to 1M tokens
+        gapTime = uint40(bound(gapTime, ONE_SECOND, 1 days));
+        finalTime = uint40(bound(finalTime, gapTime + ONE_SECOND, 2 days)); // ensure it's after bob stake
 
         // === Mint tokens ===
         tokenT.mint(users.alice, aliceAmount);
@@ -475,5 +475,40 @@ contract Staking_Test is Base_Test {
         // === Sanity Check ===
         uint256 totalClaimed = actualAlice + actualBob;
         assertApproxEqAbs(totalClaimed, totalReward, 2, "Total rewards must equal emitted rewards");
+    }
+
+    function testFuzz_WithdrawBeforeClaim(uint96 amount, uint40 withdrawTime) public {
+        amount = uint96(bound(amount, WAD, ONE_MILLION_TOKENS)); // 1 tokenT to 1M tokenT
+        withdrawTime = uint40(bound(withdrawTime, ONE_SECOND, 2 days)); // 1s to 2 days
+
+        // === Mint tokens to sender ===
+        tokenT.mint(users.sender, amount);
+
+        // === Time 0: Deposit ===
+        tokenT.approve(address(staking), amount);
+        staking.deposit(amount);
+
+        // Warp to `withdrawTime`
+        vm.warp(block.timestamp + withdrawTime);
+
+        // Withdraw full amount
+        staking.withdraw(amount);
+
+        // Check internal state
+        assertEq(staking.stakedBalances(users.sender), 0, "Stake should be 0 after full withdraw");
+
+        // Rewards should be stored internally
+        uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
+        uint256 expectedReward = rewardRate * withdrawTime;
+
+        // === Now Claim ===
+        staking.claim();
+        uint256 received = tokenR.balanceOf(users.sender);
+
+        // Should be the same as if she had claimed without withdrawing
+        assertApproxEqAbs(received, expectedReward, 1, "Withdraw before claim shouldn't affect rewards");
+
+        // Final check: pending must be 0
+        assertEq(staking.storedRewardBalances(users.sender), 0, "Reward must be cleared after claim");
     }
 }
