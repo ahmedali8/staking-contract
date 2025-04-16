@@ -170,6 +170,47 @@ contract Staking_Test is Base_Test {
         staking.claim();
     }
 
+    function test_AccumulatorIncreasesOverTime() public {
+        tokenT.approve(address(staking), 100 ether);
+        staking.deposit(100 ether);
+
+        uint256 acc1 = staking.getCumulativeRewardPerToken();
+        vm.warp(block.timestamp + 5);
+        uint256 acc2 = staking.getCumulativeRewardPerToken();
+
+        assertGe(acc2, acc1, "Accumulator must not decrease over time");
+    }
+
+    function test_RewardStopsAfterEnd() public {
+        tokenT.approve(address(staking), 100 ether);
+        staking.deposit(100 ether);
+
+        // Warp past rewards end
+        vm.warp(staking.REWARDS_END_TIME() + 100);
+
+        uint256 accBefore = staking.getCumulativeRewardPerToken();
+        vm.warp(block.timestamp + 10);
+        uint256 accAfter = staking.getCumulativeRewardPerToken();
+
+        assertEq(accAfter, accBefore, "Accumulator should stop increasing after rewards end");
+
+        uint256 pending = staking.getTotalEarnedReward(users.sender);
+        assertGt(pending, 0, "Should still be able to claim reward after end");
+
+        staking.claim();
+        assertEq(staking.storedRewardBalances(users.sender), 0, "Claim should clear pending rewards");
+    }
+
+    function test_PrecisionWithSmallStakes() public {
+        tokenT.approve(address(staking), 1);
+        staking.deposit(1); // 1 wei
+
+        vm.warp(block.timestamp + 10);
+        uint256 reward = staking.getTotalEarnedReward(users.sender);
+        uint256 expectedReward = 317_097_919_837_645_860;
+        assertEq(reward, expectedReward, "Should earn non-zero reward even for small stake");
+    }
+
     function test_MultiUser_StaggeredDepositsRewardSplit() public {
         // === Time 0 ===
         resetPrank(users.alice);
