@@ -5,6 +5,7 @@
       "name": "byzantine-fi-smart-contracts",
       "dependencies": {
         "@openzeppelin/contracts": "^5.3.0",
+        "@uniswap/v4-core": "github:Uniswap/v4-core#5f00c8416c19a7e6a5a5d0539fad30fd124f7b86",
       },
       "devDependencies": {
         "forge-std": "github:foundry-rs/forge-std#v1.9.6",
@@ -21,6 +22,8 @@
     "@openzeppelin/contracts": ["@openzeppelin/contracts@5.3.0", "", {}, "sha512-zj/KGoW7zxWUE8qOI++rUM18v+VeLTTzKs/DJFkSzHpQFPD/jKKF0TrMxBfGLl3kpdELCNccvB3zmofSzm4nlA=="],
 
     "@solidity-parser/parser": ["@solidity-parser/parser@0.16.2", "", { "dependencies": { "antlr4ts": "^0.5.0-alpha.4" } }, "sha512-PI9NfoA3P8XK2VBkK5oIfRgKDsicwDZfkVq9ZTBCQYGOP1N2owgY2dyLGyU5/J/hQs8KRk55kdmvTLjy3Mu3vg=="],
+
+    "@uniswap/v4-core": ["@uniswap/v4-core@github:Uniswap/v4-core#5f00c84", {}, "Uniswap-v4-core-5f00c84"],
 
     "ajv": ["ajv@6.12.6", "", { "dependencies": { "fast-deep-equal": "^3.1.1", "fast-json-stable-stringify": "^2.0.0", "json-schema-traverse": "^0.4.1", "uri-js": "^4.2.2" } }, "sha512-j3fVLgvTo527anyYyJOGTYJbG+vnnQYvE0m5mmkc1TK+nxAppkCLMIL0aZ4dblVCNoGShhm+kzE4ZUykBoMg4g=="],
 
