@@ -2,7 +2,6 @@
 pragma solidity >=0.8.23 <0.9.0;
 
 import { Test } from "forge-std/src/Test.sol";
-
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockTokenR } from "./mocks/MockTokenR.sol";
 import { MockTokenT } from "./mocks/MockTokenT.sol";
@@ -28,8 +27,8 @@ abstract contract Base_Test is Test {
                              TEST CONTRACTS
     //////////////////////////////////////////////////////////////*/
 
-    IERC20 internal tokenR;
-    IERC20 internal tokenT;
+    MockTokenR internal tokenR;
+    MockTokenT internal tokenT;
     Staking internal staking;
 
     /*//////////////////////////////////////////////////////////////
@@ -63,8 +62,8 @@ abstract contract Base_Test is Test {
 
         // Deploy the staking reward contract
         staking = new Staking({
-            _stakedToken: tokenT,
-            _rewardToken: tokenR,
+            _stakedToken: IERC20(tokenT),
+            _rewardToken: IERC20(tokenR),
             _totalReward: TOTAL_REWARD,
             _rewardDuration: REWARD_DURATION
         });
