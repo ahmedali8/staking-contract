@@ -2,6 +2,7 @@
 pragma solidity 0.8.29;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 
 // Example:
 // Alice stakes 100 tokenT at second 0
@@ -18,8 +19,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 //   Total: 7.5 tokenR
 
 contract Staking {
-    // Used for scaling fixed point math (1e18 = 1 token)
-    uint256 private constant PRECISION = 1e18;
+    uint256 private constant RAY = 1e27;
 
     /// @notice The token that users stake (e.g., tokenT)
     IERC20 public immutable STAKED_TOKEN;
@@ -189,13 +189,13 @@ contract Staking {
     function _calculateUpdatedAccumulator() internal view returns (uint256) {
         uint256 _timeElapsed = _lastEffectiveTime() - lastRewardUpdateTime;
         if (totalTokensStaked == 0) return rewardAccumulator;
-        return rewardAccumulator + (_timeElapsed * REWARD_RATE_PER_SECOND * PRECISION) / totalTokensStaked;
+        return rewardAccumulator + FullMath.mulDiv(_timeElapsed * REWARD_RATE_PER_SECOND, RAY, totalTokensStaked);
     }
 
     // Delta * stake + stored
     function _calculateUserReward(address user, uint256 updatedAccumulator) internal view returns (uint256) {
         uint256 _delta = updatedAccumulator - userRewardCheckpoints[user];
-        uint256 _newlyAccrued = (stakedBalances[user] * _delta) / PRECISION;
+        uint256 _newlyAccrued = FullMath.mulDiv(stakedBalances[user], _delta, RAY);
         return storedRewardBalances[user] + _newlyAccrued;
     }
 }
