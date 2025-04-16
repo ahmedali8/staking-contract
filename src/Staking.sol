@@ -47,10 +47,10 @@ contract Staking {
 
     // unclaimed, accrued rewards in tokenR
     // How much reward this user has earned up until the last time we updated their state?
-    mapping(address user => uint256 rewardAmount) public storedRewardBalance;
+    mapping(address user => uint256 rewardAmount) public storedRewardBalances;
 
     // last recorded rewardAccumulator for reward accounting
-    mapping(address user => uint256 checkpoint) public userRewardCheckpoint;
+    mapping(address user => uint256 checkpoint) public userRewardCheckpoints;
 
     error AmountIsZero();
     error NoPendingRewardsToClaim();
@@ -109,8 +109,8 @@ contract Staking {
 
         _sync(msg.sender);
 
-        uint256 _pendingReward = storedRewardBalance[msg.sender];
-        storedRewardBalance[msg.sender] = 0;
+        uint256 _pendingReward = storedRewardBalances[msg.sender];
+        storedRewardBalances[msg.sender] = 0;
 
         REWARD_TOKEN.transfer(msg.sender, _pendingReward);
     }
@@ -124,9 +124,9 @@ contract Staking {
         lastRewardUpdateTime = _timeNow;
 
         // Update user-specific reward state
-        storedRewardBalance[user] = getTotalEarnedReward(user);
+        storedRewardBalances[user] = getTotalEarnedReward(user);
 
-        userRewardCheckpoint[user] = rewardAccumulator;
+        userRewardCheckpoints[user] = rewardAccumulator;
     }
 
     /// @notice Calculates the cumulative reward per token staked.
@@ -158,7 +158,7 @@ contract Staking {
     /// @dev Computes the difference between the user's last recorded global checkpoint and the latest one,
     /// then multiplies that delta by the user's current stake to compute newly earned rewards.
     /// Adds that to any previously pending reward that wasn't claimed yet.
-    /// storedRewardBalance[user] + new reward since last sync (based on stake × delta)
+    /// storedRewardBalances[user] + new reward since last sync (based on stake × delta)
     ///
     /// Example:
     /// Continuing from above:
@@ -177,9 +177,9 @@ contract Staking {
     ///   - delta = 0.125e18 - 0.1e18 = 0.025e18
     ///   - newReward = 300 * 0.025e18 / 1e18 = 7.5 tokenR
     function getTotalEarnedReward(address user) public view returns (uint256) {
-        uint256 _rewardDelta = getCumulativeRewardPerToken() - userRewardCheckpoint[user];
+        uint256 _rewardDelta = getCumulativeRewardPerToken() - userRewardCheckpoints[user];
         uint256 _newlyAccrued = (stakedBalances[user] * _rewardDelta) / PRECISION;
-        return storedRewardBalance[user] + _newlyAccrued;
+        return storedRewardBalances[user] + _newlyAccrued;
     }
 
     function _lastEffectiveTime() internal view returns (uint256) {

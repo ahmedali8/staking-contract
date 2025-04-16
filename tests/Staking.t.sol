@@ -86,12 +86,12 @@ contract Staking_Test is Base_Test {
         assertEq(staking.totalTokensStaked(), 50 ether, "Total staked should reduce");
 
         // Reward must not be auto-claimed
-        uint256 pending = staking.storedRewardBalance(users.alice);
+        uint256 pending = staking.storedRewardBalances(users.alice);
         assertGt(pending, 0, "Reward should still be pending after withdraw");
 
         // Claim to finalize test
         staking.claim();
-        assertEq(staking.storedRewardBalance(users.alice), 0, "Should be zero after explicit claim");
+        assertEq(staking.storedRewardBalances(users.alice), 0, "Should be zero after explicit claim");
     }
 
     function test_RevertWhen_WithdrawWithoutDeposit() public {
@@ -134,7 +134,7 @@ contract Staking_Test is Base_Test {
         assertEq(claimed, 0.3170979198376458 ether, "Alice should receive tokenR");
 
         // Assert that storedRewardBalance has been zeroed out
-        assertEq(staking.storedRewardBalance(users.alice), 0, "Pending reward must be zero after claim");
+        assertEq(staking.storedRewardBalances(users.alice), 0, "Pending reward must be zero after claim");
 
         // Global state remains
         assertEq(staking.totalTokensStaked(), 100 ether, "Global total should remain the same");
@@ -158,7 +158,7 @@ contract Staking_Test is Base_Test {
         tokenT.approve(address(staking), depositAmount);
         staking.deposit(depositAmount);
 
-        assertEq(staking.storedRewardBalance(users.alice), 0, "Alice should have no pending rewards");
+        assertEq(staking.storedRewardBalances(users.alice), 0, "Alice should have no pending rewards");
 
         vm.expectRevert(abi.encodeWithSelector(Staking.NoPendingRewardsToClaim.selector));
         staking.claim();
