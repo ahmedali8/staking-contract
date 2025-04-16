@@ -136,6 +136,26 @@ contract Staking_Test is Base_Test {
         assertEq(staking.totalTokensStaked(), 100 ether, "Global total should remain the same");
     }
 
+    function test_ClaimThenReDepositUpdatesCheckpoint() public {
+        resetPrank(users.alice);
+        uint256 amount = 100 ether;
+        tokenT.approve(address(staking), amount);
+        staking.deposit(amount);
+
+        vm.warp(block.timestamp + 10);
+        staking.claim();
+
+        uint256 checkpointAfterClaim = staking.userRewardCheckpoints(users.alice);
+
+        vm.warp(block.timestamp + 5);
+
+        tokenT.approve(address(staking), amount);
+        staking.deposit(amount);
+
+        uint256 checkpointAfterReDeposit = staking.userRewardCheckpoints(users.alice);
+        assertGt(checkpointAfterReDeposit, checkpointAfterClaim, "Checkpoint should be updated after re-deposit");
+    }
+
     function test_RevertWhen_ClaimWithoutDeposit() public {
         // Eve has not deposited
         resetPrank(users.eve);
