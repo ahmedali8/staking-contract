@@ -126,7 +126,7 @@ contract Staking_Test is Base_Test {
         uint256 rewardAfter = tokenR.balanceOf(users.alice);
         uint256 claimed = rewardAfter - rewardBefore;
 
-        uint256 expectedReward = 317097919837645860;
+        uint256 expectedReward = 317_097_919_837_645_860;
         assertEq(claimed, expectedReward, "Alice should receive tokenR");
 
         // Assert that storedRewardBalance has been zeroed out
@@ -181,8 +181,8 @@ contract Staking_Test is Base_Test {
 
         uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
 
-        uint256 expectedAliceReward = 396372399797057325;
-        uint256 expectedBobReward = 237823439878234395;
+        uint256 expectedAliceReward = 396_372_399_797_057_325;
+        uint256 expectedBobReward = 237_823_439_878_234_395;
 
         // === Alice Claims ===
         resetPrank(users.alice);
@@ -225,7 +225,7 @@ contract Staking_Test is Base_Test {
 
         // === Total Rewards Distributed ===
         uint256 totalRewardsDistributed = staking.totalRewardsDistributed();
-        uint256 expectedTotalRewardsDistributed = 634195839675291720;
+        uint256 expectedTotalRewardsDistributed = 634_195_839_675_291_720;
         assertEq(totalRewardsDistributed, expectedTotalRewardsDistributed, "Total rewards distributed mismatch");
     }
 }
