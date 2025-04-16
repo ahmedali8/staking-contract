@@ -107,11 +107,9 @@ contract Staking {
     /// @dev This function will transfer the pending rewards from the contract to the user
     /// and reset the user's pending rewards to zero.
     function claim() external {
-        if (stakedBalances[msg.sender] == 0) revert NoStakedTokens();
         if (getTotalEarnedReward(msg.sender) == 0) revert NoPendingRewardsToClaim();
 
         _sync(msg.sender);
-
         uint256 _pendingReward = storedRewardBalances[msg.sender];
         storedRewardBalances[msg.sender] = 0;
         totalRewardsDistributed += _pendingReward;
