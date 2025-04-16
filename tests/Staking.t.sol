@@ -409,4 +409,71 @@ contract Staking_Test is Base_Test {
         // Ensure reward balance cleared
         assertEq(staking.storedRewardBalances(users.alice), 0, "Stored reward not cleared");
     }
+
+    function testFuzz_MultipleStakesAcrossTime(
+        uint96 aliceAmount,
+        uint96 bobAmount,
+        uint40 gapTime,
+        uint40 finalTime
+    )
+        public
+    {
+        aliceAmount = uint96(bound(aliceAmount, 1e18, 1e24)); // 1 to 1M tokens
+        bobAmount = uint96(bound(bobAmount, 1e18, 1e24)); // 1 to 1M tokens
+        gapTime = uint40(bound(gapTime, 1, 1 days));
+        finalTime = uint40(bound(finalTime, gapTime + 1, 2 days)); // ensure it's after bob stake
+
+        // === Mint tokens ===
+        tokenT.mint(users.alice, aliceAmount);
+        tokenT.mint(users.bob, bobAmount);
+
+        // === Alice stakes at t=0 ===
+        resetPrank(users.alice);
+        tokenT.approve(address(staking), aliceAmount);
+        staking.deposit(aliceAmount);
+
+        // === Warp to gapTime, then Bob stakes ===
+        vm.warp(block.timestamp + gapTime);
+        resetPrank(users.bob);
+        tokenT.approve(address(staking), bobAmount);
+        staking.deposit(bobAmount);
+
+        // === Warp to finalTime ===
+        vm.warp(block.timestamp + (finalTime - gapTime));
+
+        uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
+
+        // === Expected rewards ===
+        uint256 totalReward = rewardRate * finalTime;
+
+        // Alice's share:
+        // - From 0 to gapTime: full reward (she's the only staker)
+        // - From gapTime to finalTime: weighted by share
+        uint256 rewardPart1 = rewardRate * gapTime;
+
+        uint256 sharedReward = rewardRate * (finalTime - gapTime);
+        uint256 totalStaked = uint256(aliceAmount) + uint256(bobAmount);
+        uint256 rewardPart2Alice = FullMath.mulDiv(sharedReward, aliceAmount, totalStaked);
+        uint256 expectedAlice = rewardPart1 + rewardPart2Alice;
+
+        uint256 expectedBob = FullMath.mulDiv(sharedReward, bobAmount, totalStaked);
+
+        // === Alice Claims ===
+        resetPrank(users.alice);
+        uint256 actualAlice = staking.getTotalEarnedReward(users.alice);
+        staking.claim();
+        assertApproxEqAbs(actualAlice, expectedAlice, 1, "Alice reward mismatch");
+        assertEq(tokenR.balanceOf(users.alice), actualAlice);
+
+        // === Bob Claims ===
+        resetPrank(users.bob);
+        uint256 actualBob = staking.getTotalEarnedReward(users.bob);
+        staking.claim();
+        assertApproxEqAbs(actualBob, expectedBob, 1, "Bob reward mismatch");
+        assertEq(tokenR.balanceOf(users.bob), actualBob);
+
+        // === Sanity Check ===
+        uint256 totalClaimed = actualAlice + actualBob;
+        assertApproxEqAbs(totalClaimed, totalReward, 2, "Total rewards must equal emitted rewards");
+    }
 }
