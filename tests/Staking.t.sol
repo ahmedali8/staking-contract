@@ -50,7 +50,7 @@ contract Staking_Test is Base_Test {
         // Deposit tokenT into the staking contract
         staking.deposit(depositAmount);
 
-        // Check: Alice’s stake is correctly updated
+        // Check: Alice's stake is correctly updated
         uint256 stakedBalance = staking.stakedBalances(users.alice);
         assertEq(stakedBalance, depositAmount, "Alice's staked balance should match deposit amount");
 
@@ -180,10 +180,13 @@ contract Staking_Test is Base_Test {
         tokenT.approve(address(staking), bobStake);
         staking.deposit(bobStake);
 
+        console2.log("totalStaked: ", staking.totalTokensStaked());
+
         // Warp to t = 20s
         vm.warp(block.timestamp + 10);
 
         uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
+        console2.log("rewardRate: ", rewardRate); // (31709791983764586) -> 0.031709791983764586 tokenR / sec
 
         // === Alice Claims ===
         resetPrank(users.alice);
@@ -193,30 +196,62 @@ contract Staking_Test is Base_Test {
         uint256 aliceReceived = tokenR.balanceOf(users.alice);
         console2.log("aliceReceived: ", aliceReceived); // 396372399797057325
 
-        // TODO: Fix
-        // pending:        0.396372399797057200
-        // received:       0.396372399797057325
-        // precision loss: 0.000000000000000325
+        /*
+        alice stakes: 100e18 tokens
+        bob stakes: 300e18 tokens
 
-        // Expected: 12.5 tokenR
-        uint256 expectedAlice = (rewardRate * 10) // solo period
-            + (rewardRate * 10 * aliceStake / (aliceStake + bobStake)); // shared period
-        assertApproxEqAbs(alicePending, expectedAlice, 325, "Alice pending reward mismatch");
-        assertApproxEqAbs(aliceReceived, expectedAlice, 325, "Alice received reward mismatch");
+        reward rate: 31709791983764586 tokenR / sec
+
+        Period      | Who   | Stake    | Reward Calculation                                    | Result (wei)
+        ------------|-------|----------|-------------------------------------------------------|------------------
+        0s - 10s    | Alice | 100e18   | 10s * 31709791983764586                               | 317097919837645860
+        10s - 20s   | Alice | 100e18   | (10s * 31709791983764586 * 100e18 / 400e18)           | 79274479959411465
+        10s - 20s   | Bob   | 300e18   | (10s * 31709791983764586 * 300e18 / 400e18)           | 237823439878234395
+
+        Total Alice |       |          | 317097919837645860 + 79274479959411465                | 396372399797057325
+        Total Bob   |       |          | 237823439878234395                                    | 237823439878234395
+        Distributed | All   |          | 396372399797057325 + 237823439878234395               | 634195839675291720
+        */
+
+        /*
+        TODO: Fix: Precision Loss
+
+        Alice:
+        calculated:     396372399797057325 (0.396372399797057325)
+        pending:        396372399797057200 (0.396372399797057200)
+        received:       396372399797057200 (0.396372399797057200)
+        precision loss: 125                (0.000000000000000125)
+
+        Bob:
+        calculated:     237823439878234395 (0.237823439878234395)
+        pending:        237823439878234200 (0.237823439878234200)
+        received:       237823439878234200 (0.237823439878234200)
+        precision loss: 195                (0.000000000000000195)
+        */
+
+        assertApproxEqAbs(alicePending, 396372399797057325, 125, "Alice pending reward mismatch");
+        assertApproxEqAbs(aliceReceived, 396372399797057200, 125, "Alice received reward mismatch");
 
         // === Bob Claims ===
         resetPrank(users.bob);
         uint256 bobPending = staking.getTotalEarnedReward(users.bob);
+        console2.log("bobPending: ", bobPending);
         staking.claim();
         uint256 bobReceived = tokenR.balanceOf(users.bob);
+        console2.log("bobReceived: ", bobReceived);
 
-        // Expected: 7.5 tokenR
-        uint256 expectedBob = (rewardRate * 10 * bobStake / (aliceStake + bobStake));
-        assertApproxEqAbs(bobPending, expectedBob, 1e12, "Bob pending reward mismatch");
-        assertApproxEqAbs(bobReceived, expectedBob, 1e12, "Bob received reward mismatch");
+        assertApproxEqAbs(bobPending, 237823439878234200, 195, "Bob pending reward mismatch");
+        assertApproxEqAbs(bobReceived, 237823439878234200, 195, "Bob received reward mismatch");
 
         // === Sanity Check ===
         uint256 totalDistributed = aliceReceived + bobReceived;
         assertApproxEqAbs(totalDistributed, rewardRate * 20, 1e12, "Total distributed rewards mismatch");
+
+        // === Total Rewards Distributed ===
+        uint256 totalRewardsDistributed = staking.totalRewardsDistributed();
+        // total rewards distributed:        634195839675291400 (0.634195839675291400)
+        // expected rewards distributed:     634195839675291720 (0.634195839675291720)
+        // precision loss:                   320                (0.000000000000000320)
+        assertApproxEqAbs(totalRewardsDistributed, 634195839675291720, 320, "Total rewards distributed mismatch");
     }
 }

@@ -42,6 +42,9 @@ contract Staking {
     /// @notice Total amount of staked tokens across all users
     uint256 public totalTokensStaked;
 
+    /// @notice Total amount of rewards that have been distributed
+    uint256 public totalRewardsDistributed;
+
     // staked tokenT balance
     mapping(address user => uint256 stakedAmount) public stakedBalances;
 
@@ -111,6 +114,7 @@ contract Staking {
 
         uint256 _pendingReward = storedRewardBalances[msg.sender];
         storedRewardBalances[msg.sender] = 0;
+        totalRewardsDistributed += _pendingReward;
 
         REWARD_TOKEN.transfer(msg.sender, _pendingReward);
     }
