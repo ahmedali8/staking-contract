@@ -229,8 +229,8 @@ contract Staking_Test is Base_Test {
         precision loss: 195                (0.000000000000000195)
         */
 
-        assertApproxEqAbs(alicePending, 396372399797057325, 125, "Alice pending reward mismatch");
-        assertApproxEqAbs(aliceReceived, 396372399797057200, 125, "Alice received reward mismatch");
+        assertApproxEqAbs(alicePending, 396_372_399_797_057_325, 125, "Alice pending reward mismatch");
+        assertApproxEqAbs(aliceReceived, 396_372_399_797_057_200, 125, "Alice received reward mismatch");
 
         // === Bob Claims ===
         resetPrank(users.bob);
@@ -240,8 +240,8 @@ contract Staking_Test is Base_Test {
         uint256 bobReceived = tokenR.balanceOf(users.bob);
         console2.log("bobReceived: ", bobReceived);
 
-        assertApproxEqAbs(bobPending, 237823439878234200, 195, "Bob pending reward mismatch");
-        assertApproxEqAbs(bobReceived, 237823439878234200, 195, "Bob received reward mismatch");
+        assertApproxEqAbs(bobPending, 237_823_439_878_234_200, 195, "Bob pending reward mismatch");
+        assertApproxEqAbs(bobReceived, 237_823_439_878_234_200, 195, "Bob received reward mismatch");
 
         // === Sanity Check ===
         uint256 totalDistributed = aliceReceived + bobReceived;
@@ -252,6 +252,6 @@ contract Staking_Test is Base_Test {
         // total rewards distributed:        634195839675291400 (0.634195839675291400)
         // expected rewards distributed:     634195839675291720 (0.634195839675291720)
         // precision loss:                   320                (0.000000000000000320)
-        assertApproxEqAbs(totalRewardsDistributed, 634195839675291720, 320, "Total rewards distributed mismatch");
+        assertApproxEqAbs(totalRewardsDistributed, 634_195_839_675_291_720, 320, "Total rewards distributed mismatch");
     }
 }
