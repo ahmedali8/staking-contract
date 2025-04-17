@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.29;
 
+// INTERFACES
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IStaking } from "./interfaces/IStaking.sol";
+
+// TYPES
 import { UserInfo } from "./types/DataTypes.sol";
+
+// LIBRARIES
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import { Errors } from "./libraries/Errors.sol";
+
+// ABSTRACT CONTRACTS
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // Example:
 // Alice stakes 100 tokenT at second 0
@@ -21,9 +30,14 @@ import { UserInfo } from "./types/DataTypes.sol";
 //   For 10-20 seconds: 10 * 300/400 = 7.5 tokenR
 //   Total: 7.5 tokenR
 
-contract Staking is ReentrancyGuard {
+contract Staking is ReentrancyGuard, IStaking {
     using SafeERC20 for IERC20;
 
+    /*//////////////////////////////////////////////////////////////////////////
+                                      STORAGE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice The scaling factor for precision (1e27)
     uint256 private constant RAY = 1e27;
 
     /// @notice The token that users stake (e.g., tokenT)
@@ -35,6 +49,7 @@ contract Staking is ReentrancyGuard {
     /// @notice Reward tokens emitted per second
     uint256 public immutable REWARD_RATE_PER_SECOND;
 
+    /// @notice Timestamp at which rewards start being distributed
     uint256 public immutable REWARD_START_TIME;
 
     /// @notice Timestamp after which no new rewards are emitted
@@ -52,11 +67,12 @@ contract Staking is ReentrancyGuard {
     /// @notice Total amount of rewards that have been distributed
     uint256 public totalRewardsDistributed;
 
+    /// @notice Mapping of user address to user-specific staking and reward information
     mapping(address user => UserInfo info) public userInfos;
 
-    error AmountIsZero();
-    error NoPendingRewardsToClaim();
-    error NoStakedTokens();
+    /*//////////////////////////////////////////////////////////////////////////
+                                    CONSTRUCTOR
+    //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Constructor to initialize the staking contract.
     /// @param _stakedToken The token that users will stake (e.g., tokenT)
@@ -71,12 +87,16 @@ contract Staking is ReentrancyGuard {
         REWARDS_END_TIME = block.timestamp + _rewardDuration;
     }
 
+    /*//////////////////////////////////////////////////////////////////////////
+                             EXTERNAL/PUBLIC FUNCTIONS
+    //////////////////////////////////////////////////////////////////////////*/
+
     /// @notice Deposit tokenT and start earning rewards
     /// @param amount Amount of tokenT to stake
     /// @dev This function will transfer the specified amount of tokenT from the user to the contract
     /// and update the user's staked balance.
-    function deposit(uint128 amount) external nonReentrant {
-        if (amount == 0) revert AmountIsZero();
+    function deposit(uint128 amount) external override nonReentrant {
+        if (amount == 0) revert Errors.AmountIsZero();
         address _user = msg.sender;
 
         _sync(_user);
@@ -91,8 +111,8 @@ contract Staking is ReentrancyGuard {
     /// @param amount Amount of tokenT to withdraw
     /// @dev This function will transfer the specified amount of tokenT from the contract to the user
     /// and update the user's staked balance.
-    function withdraw(uint128 amount) external nonReentrant {
-        if (amount == 0) revert AmountIsZero();
+    function withdraw(uint128 amount) external override nonReentrant {
+        if (amount == 0) revert Errors.AmountIsZero();
         address _user = msg.sender;
 
         _sync(_user);
@@ -106,9 +126,9 @@ contract Staking is ReentrancyGuard {
     /// @notice Claim any accrued but unclaimed tokenR rewards
     /// @dev This function will transfer the pending rewards from the contract to the user
     /// and reset the user's pending rewards to zero.
-    function claim() external nonReentrant {
+    function claim() external override nonReentrant {
         address _user = msg.sender;
-        if (getTotalEarnedReward(_user) == 0) revert NoPendingRewardsToClaim();
+        if (getTotalEarnedReward(_user) == 0) revert Errors.NoPendingRewardsToClaim();
 
         _sync(_user);
         uint256 _pendingReward = userInfos[_user].storedRewardBalance;
@@ -118,8 +138,21 @@ contract Staking is ReentrancyGuard {
         REWARD_TOKEN.safeTransfer(_user, _pendingReward);
     }
 
-    /// @dev Updates global and user-specific reward state
-    function _sync(address user) internal {
+    /*//////////////////////////////////////////////////////////////////////////
+                                 PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Internal function that synchronizes the user's reward state.
+     * @param user The address of the user to synchronize.
+     *
+     * Updates:
+     * - `rewardAccumulator` (global)
+     * - `lastRewardUpdateTime` (global)
+     * - `userInfos[user].storedRewardBalance`
+     * - `userInfos[user].rewardCheckpoint`
+     */
+    function _sync(address user) private {
         uint256 _updatedAccumulator = _calculateUpdatedAccumulator();
 
         // Update global reward state
@@ -130,6 +163,33 @@ contract Staking is ReentrancyGuard {
         userInfos[user].storedRewardBalance = uint128(_calculateUserReward(user, _updatedAccumulator));
         userInfos[user].rewardCheckpoint = _updatedAccumulator;
     }
+
+    // Caps time at reward end
+    function _lastEffectiveTime() private view returns (uint256) {
+        return block.timestamp < REWARDS_END_TIME ? block.timestamp : REWARDS_END_TIME;
+    }
+
+    // One-time rewardAccumulator computation
+    function _calculateUpdatedAccumulator() private view returns (uint256) {
+        uint256 _timeElapsed = _lastEffectiveTime() - lastRewardUpdateTime;
+        if (totalTokensStaked == 0) return rewardAccumulator;
+        return rewardAccumulator + FullMath.mulDiv(_timeElapsed * REWARD_RATE_PER_SECOND, RAY, totalTokensStaked);
+    }
+
+    // Delta * stake + stored
+    function _calculateUserReward(address user, uint256 updatedAccumulator) private view returns (uint256) {
+        UserInfo memory _userInfo = userInfos[user];
+        uint256 _delta;
+        unchecked {
+            _delta = updatedAccumulator - _userInfo.rewardCheckpoint;
+        }
+        uint256 _newlyAccrued = FullMath.mulDiv(_userInfo.stakedBalance, _delta, RAY);
+        return _userInfo.storedRewardBalance + _newlyAccrued;
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                 CONSTANT FUNCTIONS
+    //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Calculates the cumulative reward per token staked.
     /// @dev This is the global tracker for how much reward (tokenR) is distributed per staked token (tokenT).
@@ -149,7 +209,7 @@ contract Staking is ReentrancyGuard {
     ///   - rewardPerToken = 10 / 400 = 0.025 -> 0.025e18
     ///
     /// Total rewardAccumulator = 0.1e18 + 0.025e18 = 0.125e18
-    function getCumulativeRewardPerToken() public view returns (uint256 rewardPerToken) {
+    function getCumulativeRewardPerToken() external view override returns (uint256 rewardPerToken) {
         rewardPerToken = _calculateUpdatedAccumulator();
     }
 
@@ -175,30 +235,7 @@ contract Staking is ReentrancyGuard {
     ///   - checkpoint = 0.1e18 (he staked at time = 10)
     ///   - delta = 0.125e18 - 0.1e18 = 0.025e18
     ///   - newReward = 300 * 0.025e18 / 1e18 = 7.5 tokenR
-    function getTotalEarnedReward(address user) public view returns (uint256 reward) {
+    function getTotalEarnedReward(address user) public view override returns (uint256 reward) {
         reward = _calculateUserReward(user, _calculateUpdatedAccumulator());
-    }
-
-    // Caps time at reward end
-    function _lastEffectiveTime() internal view returns (uint256) {
-        return block.timestamp < REWARDS_END_TIME ? block.timestamp : REWARDS_END_TIME;
-    }
-
-    // One-time rewardAccumulator computation
-    function _calculateUpdatedAccumulator() internal view returns (uint256) {
-        uint256 _timeElapsed = _lastEffectiveTime() - lastRewardUpdateTime;
-        if (totalTokensStaked == 0) return rewardAccumulator;
-        return rewardAccumulator + FullMath.mulDiv(_timeElapsed * REWARD_RATE_PER_SECOND, RAY, totalTokensStaked);
-    }
-
-    // Delta * stake + stored
-    function _calculateUserReward(address user, uint256 updatedAccumulator) internal view returns (uint256) {
-        UserInfo memory _userInfo = userInfos[user];
-        uint256 _delta;
-        unchecked {
-            _delta = updatedAccumulator - _userInfo.rewardCheckpoint;
-        }
-        uint256 _newlyAccrued = FullMath.mulDiv(_userInfo.stakedBalance, _delta, RAY);
-        return _userInfo.storedRewardBalance + _newlyAccrued;
     }
 }
