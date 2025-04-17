@@ -126,13 +126,31 @@ contract Staking is ReentrancyGuard, IStaking {
 
     /**
      * @dev Internal function that synchronizes the user's reward state.
-     * @param user The address of the user to synchronize.
+     * @param user The address of the user whose reward state will be updated.
      *
-     * Updates:
-     * - `rewardAccumulator` (global)
-     * - `lastRewardUpdateTime` (global)
-     * - `_userInfos[user].storedRewardBalance`
-     * - `_userInfos[user].rewardCheckpoint`
+     * This function performs two main updates:
+     *
+     * 1. Updates the global reward accumulator (`rewardAccumulator`) based on the time elapsed since the last update,
+     *    ensuring fair and continuous reward distribution.
+     *
+     * 2. Calculates and updates the user's specific reward state:
+     *    - Adds newly accrued rewards to `storedRewardBalance`
+     *    - Updates the user's checkpoint (`rewardCheckpoint`) to the latest accumulator
+     *
+     * Example:
+     *  Alice stakes 100 tokenT at time = 0
+     *  Bob stakes 300 tokenT at time = 10
+     *  At time = 20, both call `_sync()`
+     *
+     *  rewardRate = 31.709791983764586e15 (in tokenR/sec)
+     *
+     *  Accumulator calculations:
+     *    - [0s–10s]: Only Alice stakes 100, so accumulator += (10s * rewardRate / 100)
+     *    - [10s–20s]: Alice and Bob (total 400 staked), so accumulator += (10s * rewardRate / 400)
+     *
+     *  When `_sync(Alice)` is called:
+     *    - Reward earned = (Alice stake * (accumulator - checkpoint)) / RAY
+     *    - storedRewardBalance += reward earned
      */
     function _sync(address user) private {
         uint256 _updatedAccumulator = _calculateUpdatedAccumulator();
@@ -146,19 +164,55 @@ contract Staking is ReentrancyGuard, IStaking {
         _userInfos[user].rewardCheckpoint = _updatedAccumulator;
     }
 
-    // Caps time at reward end
+    /// @dev Helper to get the effective time to use in accumulator updates.
+    /// If rewards have already ended, cap the time to `REWARDS_END_TIME`
     function _lastEffectiveTime() private view returns (uint256) {
         return block.timestamp < REWARDS_END_TIME ? block.timestamp : REWARDS_END_TIME;
     }
 
-    // One-time rewardAccumulator computation
+    /**
+     * @dev Calculates the updated rewardAccumulator.
+     *
+     * If no tokens are staked, returns the existing accumulator.
+     * Otherwise, adds:
+     *      delta = elapsedTime * rewardRatePerSecond * 1e27 / totalStaked
+     *
+     * Example:
+     * - 30 seconds have passed
+     * - rewardRate = 31.709791983764586e15 tokenR/sec
+     * - totalStaked = 400e18
+     *
+     *  result = accumulator + (30 * 31.709791983764586e15 * 1e27 / 400e18)
+     */
     function _calculateUpdatedAccumulator() private view returns (uint256) {
         uint256 _timeElapsed = _lastEffectiveTime() - lastRewardUpdateTime;
         if (totalTokensStaked == 0) return rewardAccumulator;
         return rewardAccumulator + FullMath.mulDiv(_timeElapsed * REWARD_RATE_PER_SECOND, RAY, totalTokensStaked);
     }
 
-    // Delta * stake + stored
+    /**
+     * @dev Computes total reward owed to a user.
+     * @param user The address to calculate the reward for
+     * @param updatedAccumulator The latest rewardAccumulator value
+     * @return reward Total reward = (delta * stake / RAY) + stored
+     *
+     * Example:
+     *  Alice:
+     *   - staked 100e18 tokenT
+     *   - storedReward = 0
+     *   - checkpoint = 0
+     *   - updatedAccumulator = 0.125e27
+     *
+     *   reward = (100e18 * 0.125e27 / 1e27) = 12.5 tokenR
+     *
+     *  Bob:
+     *   - staked 300e18 tokenT
+     *   - storedReward = 0
+     *   - checkpoint = 0.1e27
+     *   - updatedAccumulator = 0.125e27
+     *   - delta = 0.025e27
+     *   reward = (300e18 * 0.025e27 / 1e27) = 7.5 tokenR
+     */
     function _calculateUserReward(address user, uint256 updatedAccumulator) private view returns (uint256) {
         UserInfo memory _userInfo = _userInfos[user];
         uint256 _delta;
