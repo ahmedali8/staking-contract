@@ -8,6 +8,7 @@ import { StdUtils } from "forge-std/src/StdUtils.sol";
 import { StdInvariant } from "forge-std/src/StdInvariant.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Staking } from "../src/Staking.sol";
+import { UserInfo } from "../src/types/DataTypes.sol";
 import { console2 } from "forge-std/src/console2.sol";
 
 uint256 constant WAD = 1e18;
@@ -82,7 +83,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
     //////////////////////////////////////////////////////////////*/
 
     function deposit(
-        uint256 amount,
+        uint128 amount,
         uint256 timeJumpSeed
     )
         public
@@ -93,7 +94,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
     {
         console2.log(">>deposit msg.sender", msg.sender);
 
-        amount = bound(amount, WAD, ONE_MILLION_TOKENS); // 1 to 1M tokens
+        amount = uint128(bound(uint256(amount), WAD, ONE_MILLION_TOKENS)); // 1 to 1M tokens
         deal({ token: address(tokenT), to: msg.sender, give: ONE_MILLION_TOKENS, adjust: true });
         tokenT.approve(address(staking), amount);
         console2.log("deposit", amount);
@@ -101,7 +102,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
     }
 
     function withdraw(
-        uint256 amount,
+        uint128 amount,
         uint256 timeJumpSeed
     )
         public
@@ -111,7 +112,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
         instrument("withdraw")
     {
         // deposit first
-        amount = bound(amount, WAD, ONE_MILLION_TOKENS); // 1 to 1M tokens
+        amount = uint128(bound(uint256(amount), WAD, ONE_MILLION_TOKENS)); // 1 to 1M tokens
         deal({ token: address(tokenT), to: msg.sender, give: ONE_MILLION_TOKENS, adjust: true });
         tokenT.approve(address(staking), amount);
         staking.deposit(amount);
@@ -121,7 +122,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
     }
 
     function withdrawAfterTimePasses(
-        uint256 amount,
+        uint128 amount,
         uint256 timeJumpSeed
     )
         public
@@ -131,7 +132,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
         instrument("withdraw")
     {
         // deposit first
-        amount = bound(amount, WAD, ONE_MILLION_TOKENS); // 1 to 1M tokens
+        amount = uint128(bound(uint256(amount), WAD, ONE_MILLION_TOKENS)); // 1 to 1M tokens
         deal({ token: address(tokenT), to: msg.sender, give: ONE_MILLION_TOKENS, adjust: true });
         tokenT.approve(address(staking), amount);
         staking.deposit(amount);
@@ -145,7 +146,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
     }
 
     function claim(
-        uint256 amount,
+        uint128 amount,
         uint256 timeJumpSeed
     )
         public
@@ -155,7 +156,7 @@ contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvari
         instrument("claim")
     {
         // deposit first
-        amount = bound(amount, WAD, ONE_MILLION_TOKENS); // 1 to 1M tokens
+        amount = uint128(bound(uint256(amount), WAD, ONE_MILLION_TOKENS)); // 1 to 1M tokens
         deal({ token: address(tokenT), to: msg.sender, give: ONE_MILLION_TOKENS, adjust: true });
         tokenT.approve(address(staking), amount);
         staking.deposit(amount);
@@ -239,7 +240,7 @@ contract Staking_Invariant_Test is Base_Test {
         uint256 total = 0;
         for (uint8 i = 0; i < _users.length; i++) {
             address sender = _users[i];
-            uint256 stakedBalance = staking.stakedBalances(sender);
+            (uint128 stakedBalance,,) = staking.userInfos(sender);
             total += stakedBalance;
         }
         // Allow for 1 wei error
@@ -256,8 +257,8 @@ contract Staking_Invariant_Test is Base_Test {
         address[] memory _users = targetSenders();
         for (uint256 i = 0; i < _users.length; i++) {
             address user = _users[i];
-            uint256 stored = staking.storedRewardBalances(user);
-            assertGe(stored, 0, "Stored reward should not be negative");
+            (, uint128 storedRewardBalance,) = staking.userInfos(user);
+            assertGe(storedRewardBalance, 0, "Stored reward should not be negative");
         }
     }
 
@@ -265,12 +266,12 @@ contract Staking_Invariant_Test is Base_Test {
         address[] memory _users = targetSenders();
         for (uint256 i = 0; i < _users.length; i++) {
             address user = _users[i];
-            uint256 before = staking.storedRewardBalances(user);
-            if (before > 0) {
+            (, uint128 storedRewardBalanceBeforeClaim,) = staking.userInfos(user);
+            if (storedRewardBalanceBeforeClaim > 0) {
                 resetPrank(user);
                 staking.claim();
-                uint256 afterClaim = staking.storedRewardBalances(user);
-                assertEq(afterClaim, 0, "Claim should clear reward balance");
+                (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(user);
+                assertEq(storedRewardBalanceAfterClaim, 0, "Claim should clear reward balance");
             }
         }
     }
