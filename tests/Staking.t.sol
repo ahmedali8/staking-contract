@@ -7,6 +7,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import { Staking } from "../src/Staking.sol";
 import { Errors } from "../src/libraries/Errors.sol";
+import { UserInfo } from "../src/types/DataTypes.sol";
 
 contract Staking_Test is Base_Test {
     function setUp() public override {
@@ -51,8 +52,8 @@ contract Staking_Test is Base_Test {
         staking.deposit(depositAmount);
 
         // Check: Alice's stake is correctly updated
-        (uint128 stakedBalance,,) = staking.userInfos(users.alice);
-        assertEq(stakedBalance, depositAmount, "Alice's staked balance should match deposit amount");
+        UserInfo memory _userInfo = staking.getUserInfo(users.alice);
+        assertEq(_userInfo.stakedBalance, depositAmount, "Alice's staked balance should match deposit amount");
 
         // Check: totalTokensStaked is updated
         uint256 totalStaked = staking.totalTokensStaked();
@@ -82,18 +83,17 @@ contract Staking_Test is Base_Test {
         staking.withdraw(withdrawAmount);
 
         // Check balances
-        (uint128 stakedBalance, uint128 pendingReward,) = staking.userInfos(users.alice);
-
-        assertEq(stakedBalance, 50 ether, "Alice's stake should reduce");
+        UserInfo memory _userInfo = staking.getUserInfo(users.alice);
+        assertEq(_userInfo.stakedBalance, 50 ether, "Alice's stake should reduce");
         assertEq(staking.totalTokensStaked(), 50 ether, "Total staked should reduce");
 
         // Reward must not be auto-claimed
-        assertGt(pendingReward, 0, "Reward should still be pending after withdraw");
+        assertGt(_userInfo.storedRewardBalance, 0, "Reward should still be pending after withdraw");
 
         // Claim to finalize test
         staking.claim();
-        (, uint128 pendingRewardAfterClaim,) = staking.userInfos(users.alice);
-        assertEq(pendingRewardAfterClaim, 0, "Should be zero after explicit claim");
+        UserInfo memory _userInfoAfterClaim = staking.getUserInfo(users.alice);
+        assertEq(_userInfoAfterClaim.storedRewardBalance, 0, "Should be zero after explicit claim");
     }
 
     function test_RevertWhen_UserWithdrawsWithoutDeposit() public {
@@ -132,8 +132,8 @@ contract Staking_Test is Base_Test {
         assertEq(claimed, expectedReward, "Alice should receive tokenR");
 
         // Assert that storedRewardBalance has been zeroed out
-        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.alice);
-        assertEq(storedRewardBalanceAfterClaim, 0, "Pending reward must be zero after claim");
+        UserInfo memory _userInfoAfterClaim = staking.getUserInfo(users.alice);
+        assertEq(_userInfoAfterClaim.storedRewardBalance, 0, "Pending reward must be zero after claim");
 
         // Global state remains
         assertEq(staking.totalTokensStaked(), 100 ether, "Global total should remain the same");
@@ -148,16 +148,18 @@ contract Staking_Test is Base_Test {
         vm.warp(block.timestamp + 10);
         staking.claim();
 
-        (,, uint256 rewardCheckpointAfterClaim) = staking.userInfos(users.alice);
+        UserInfo memory _userInfoAfterClaim = staking.getUserInfo(users.alice);
 
         vm.warp(block.timestamp + 5);
 
         tokenT.approve(address(staking), amount);
         staking.deposit(amount);
 
-        (,, uint256 rewardCheckpointAfterReDeposit) = staking.userInfos(users.alice);
+        UserInfo memory _userInfoAfterReDeposit = staking.getUserInfo(users.alice);
         assertGt(
-            rewardCheckpointAfterReDeposit, rewardCheckpointAfterClaim, "Checkpoint should be updated after re-deposit"
+            _userInfoAfterReDeposit.rewardCheckpoint,
+            _userInfoAfterClaim.rewardCheckpoint,
+            "Checkpoint should be updated after re-deposit"
         );
     }
 
@@ -169,8 +171,8 @@ contract Staking_Test is Base_Test {
         tokenT.approve(address(staking), depositAmount);
         staking.deposit(depositAmount);
 
-        (, uint128 storedRewardBalance,) = staking.userInfos(users.alice);
-        assertEq(storedRewardBalance, 0, "Alice should have no pending rewards");
+        UserInfo memory _userInfo = staking.getUserInfo(users.alice);
+        assertEq(_userInfo.storedRewardBalance, 0, "Alice should have no pending rewards");
 
         vm.expectRevert(abi.encodeWithSelector(Errors.NoPendingRewardsToClaim.selector));
         staking.claim();
@@ -204,8 +206,8 @@ contract Staking_Test is Base_Test {
         assertGt(pending, 0, "Should still be able to claim reward after end");
 
         staking.claim();
-        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.sender);
-        assertEq(storedRewardBalanceAfterClaim, 0, "Claim should clear pending rewards");
+        UserInfo memory _userInfoAfterClaim = staking.getUserInfo(users.sender);
+        assertEq(_userInfoAfterClaim.storedRewardBalance, 0, "Claim should clear pending rewards");
     }
 
     function test_SingleWeiStakeAccruesNonZeroRewards() public {
@@ -414,8 +416,8 @@ contract Staking_Test is Base_Test {
         assertApproxEqAbs(actual, expectedReward, 1, "Claimed reward mismatch");
 
         // Ensure reward balance cleared
-        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.alice);
-        assertEq(storedRewardBalanceAfterClaim, 0, "Stored reward not cleared");
+        UserInfo memory _userInfoAfterClaim = staking.getUserInfo(users.alice);
+        assertEq(_userInfoAfterClaim.storedRewardBalance, 0, "Stored reward not cleared");
     }
 
     function testFuzz_FairRewardSplitBetweenUsersStakingAtDifferentTimes(
@@ -503,8 +505,8 @@ contract Staking_Test is Base_Test {
         staking.withdraw(amount);
 
         // Check internal state
-        (uint128 stakedBalanceAfterWithdraw,,) = staking.userInfos(users.sender);
-        assertEq(stakedBalanceAfterWithdraw, 0, "Stake should be 0 after full withdraw");
+        UserInfo memory _userInfoAfterWithdraw = staking.getUserInfo(users.sender);
+        assertEq(_userInfoAfterWithdraw.stakedBalance, 0, "Stake should be 0 after full withdraw");
 
         // Rewards should be stored internally
         uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
@@ -518,7 +520,7 @@ contract Staking_Test is Base_Test {
         assertApproxEqAbs(received, expectedReward, 1, "Withdraw before claim shouldn't affect rewards");
 
         // Final check: pending must be 0
-        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.sender);
-        assertEq(storedRewardBalanceAfterClaim, 0, "Reward must be cleared after claim");
+        UserInfo memory _userInfoAfterClaim = staking.getUserInfo(users.sender);
+        assertEq(_userInfoAfterClaim.storedRewardBalance, 0, "Reward must be cleared after claim");
     }
 }

@@ -238,8 +238,8 @@ contract Staking_Invariant_Test is Base_Test {
         uint256 total = 0;
         for (uint8 i = 0; i < _users.length; i++) {
             address sender = _users[i];
-            (uint128 stakedBalance,,) = staking.userInfos(sender);
-            total += stakedBalance;
+            UserInfo memory _userInfo = staking.getUserInfo(sender);
+            total += _userInfo.stakedBalance;
         }
         // Allow for 1 wei error
         assertApproxEqAbs(total, staking.totalTokensStaked(), 1, "Total staked tokens mismatch");
@@ -255,8 +255,8 @@ contract Staking_Invariant_Test is Base_Test {
         address[] memory _users = targetSenders();
         for (uint256 i = 0; i < _users.length; i++) {
             address user = _users[i];
-            (, uint128 storedRewardBalance,) = staking.userInfos(user);
-            assertGe(storedRewardBalance, 0, "Stored reward should not be negative");
+            UserInfo memory _userInfo = staking.getUserInfo(user);
+            assertGe(_userInfo.storedRewardBalance, 0, "Stored reward should not be negative");
         }
     }
 
@@ -264,12 +264,12 @@ contract Staking_Invariant_Test is Base_Test {
         address[] memory _users = targetSenders();
         for (uint256 i = 0; i < _users.length; i++) {
             address user = _users[i];
-            (, uint128 storedRewardBalanceBeforeClaim,) = staking.userInfos(user);
-            if (storedRewardBalanceBeforeClaim > 0) {
+            UserInfo memory _userInfoBeforeClaim = staking.getUserInfo(user);
+            if (_userInfoBeforeClaim.storedRewardBalance > 0) {
                 resetPrank(user);
                 staking.claim();
-                (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(user);
-                assertEq(storedRewardBalanceAfterClaim, 0, "Claim should clear reward balance");
+                UserInfo memory _userInfoAfterClaim = staking.getUserInfo(user);
+                assertEq(_userInfoAfterClaim.storedRewardBalance, 0, "Claim should clear reward balance");
             }
         }
     }
