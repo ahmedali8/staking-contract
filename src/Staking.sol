@@ -3,6 +3,7 @@ pragma solidity 0.8.29;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // Example:
 // Alice stakes 100 tokenT at second 0
@@ -19,6 +20,8 @@ import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 //   Total: 7.5 tokenR
 
 contract Staking {
+    using SafeERC20 for IERC20;
+
     uint256 private constant RAY = 1e27;
 
     /// @notice The token that users stake (e.g., tokenT)
@@ -29,6 +32,8 @@ contract Staking {
 
     /// @notice Reward tokens emitted per second
     uint256 public immutable REWARD_RATE_PER_SECOND;
+
+    uint256 public immutable REWARD_START_TIME;
 
     /// @notice Timestamp after which no new rewards are emitted
     uint256 public immutable REWARDS_END_TIME;
@@ -68,6 +73,7 @@ contract Staking {
         STAKED_TOKEN = _stakedToken;
         REWARD_TOKEN = _rewardToken;
         REWARD_RATE_PER_SECOND = _totalReward / _rewardDuration;
+        REWARD_START_TIME = block.timestamp;
         REWARDS_END_TIME = block.timestamp + _rewardDuration;
     }
 
@@ -77,13 +83,14 @@ contract Staking {
     /// and update the user's staked balance.
     function deposit(uint256 amount) external {
         if (amount == 0) revert AmountIsZero();
+        address _user = msg.sender;
 
-        _sync(msg.sender);
-        stakedBalances[msg.sender] += amount;
+        _sync(_user);
+        stakedBalances[_user] += amount;
         totalTokensStaked += amount;
 
         // take tokens from the user
-        STAKED_TOKEN.transferFrom(msg.sender, address(this), amount);
+        STAKED_TOKEN.safeTransferFrom(_user, address(this), amount);
     }
 
     /// @notice Withdraw previously staked tokenT
@@ -92,13 +99,14 @@ contract Staking {
     /// and update the user's staked balance.
     function withdraw(uint256 amount) external {
         if (amount == 0) revert AmountIsZero();
+        address _user = msg.sender;
 
-        _sync(msg.sender);
-        stakedBalances[msg.sender] -= amount;
+        _sync(_user);
+        stakedBalances[_user] -= amount;
         totalTokensStaked -= amount;
 
         // send tokens to the user
-        STAKED_TOKEN.transfer(msg.sender, amount);
+        STAKED_TOKEN.safeTransfer(_user, amount);
 
         // TODO: if the user is withdrawing full amount then send him the rewards as well
     }
@@ -107,14 +115,15 @@ contract Staking {
     /// @dev This function will transfer the pending rewards from the contract to the user
     /// and reset the user's pending rewards to zero.
     function claim() external {
-        if (getTotalEarnedReward(msg.sender) == 0) revert NoPendingRewardsToClaim();
+        address _user = msg.sender;
+        if (getTotalEarnedReward(_user) == 0) revert NoPendingRewardsToClaim();
 
-        _sync(msg.sender);
-        uint256 _pendingReward = storedRewardBalances[msg.sender];
-        storedRewardBalances[msg.sender] = 0;
+        _sync(_user);
+        uint256 _pendingReward = storedRewardBalances[_user];
+        storedRewardBalances[_user] = 0;
         totalRewardsDistributed += _pendingReward;
 
-        REWARD_TOKEN.transfer(msg.sender, _pendingReward);
+        REWARD_TOKEN.safeTransfer(_user, _pendingReward);
     }
 
     /// @dev Updates global and user-specific reward state
@@ -192,7 +201,10 @@ contract Staking {
 
     // Delta * stake + stored
     function _calculateUserReward(address user, uint256 updatedAccumulator) internal view returns (uint256) {
-        uint256 _delta = updatedAccumulator - userRewardCheckpoints[user];
+        uint256 _delta;
+        unchecked {
+            _delta = updatedAccumulator - userRewardCheckpoints[user];
+        }
         uint256 _newlyAccrued = FullMath.mulDiv(stakedBalances[user], _delta, RAY);
         return storedRewardBalances[user] + _newlyAccrued;
     }
