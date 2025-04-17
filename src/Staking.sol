@@ -3,6 +3,8 @@ pragma solidity 0.8.29;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { UserInfo } from "./types/DataTypes.sol";
 
 // Example:
 // Alice stakes 100 tokenT at second 0
@@ -19,6 +21,8 @@ import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 //   Total: 7.5 tokenR
 
 contract Staking {
+    using SafeERC20 for IERC20;
+
     uint256 private constant RAY = 1e27;
 
     /// @notice The token that users stake (e.g., tokenT)
@@ -29,6 +33,8 @@ contract Staking {
 
     /// @notice Reward tokens emitted per second
     uint256 public immutable REWARD_RATE_PER_SECOND;
+
+    uint256 public immutable REWARD_START_TIME;
 
     /// @notice Timestamp after which no new rewards are emitted
     uint256 public immutable REWARDS_END_TIME;
@@ -45,15 +51,7 @@ contract Staking {
     /// @notice Total amount of rewards that have been distributed
     uint256 public totalRewardsDistributed;
 
-    // staked tokenT balance
-    mapping(address user => uint256 stakedAmount) public stakedBalances;
-
-    // unclaimed, accrued rewards in tokenR
-    // How much reward this user has earned up until the last time we updated their state?
-    mapping(address user => uint256 rewardAmount) public storedRewardBalances;
-
-    // last recorded rewardAccumulator for reward accounting
-    mapping(address user => uint256 checkpoint) public userRewardCheckpoints;
+    mapping(address user => UserInfo info) public userInfos;
 
     error AmountIsZero();
     error NoPendingRewardsToClaim();
@@ -68,6 +66,7 @@ contract Staking {
         STAKED_TOKEN = _stakedToken;
         REWARD_TOKEN = _rewardToken;
         REWARD_RATE_PER_SECOND = _totalReward / _rewardDuration;
+        REWARD_START_TIME = block.timestamp;
         REWARDS_END_TIME = block.timestamp + _rewardDuration;
     }
 
@@ -75,46 +74,47 @@ contract Staking {
     /// @param amount Amount of tokenT to stake
     /// @dev This function will transfer the specified amount of tokenT from the user to the contract
     /// and update the user's staked balance.
-    function deposit(uint256 amount) external {
+    function deposit(uint128 amount) external {
         if (amount == 0) revert AmountIsZero();
+        address _user = msg.sender;
 
-        _sync(msg.sender);
-        stakedBalances[msg.sender] += amount;
+        _sync(_user);
+        userInfos[_user].stakedBalance += amount;
         totalTokensStaked += amount;
 
         // take tokens from the user
-        STAKED_TOKEN.transferFrom(msg.sender, address(this), amount);
+        STAKED_TOKEN.safeTransferFrom(_user, address(this), amount);
     }
 
     /// @notice Withdraw previously staked tokenT
     /// @param amount Amount of tokenT to withdraw
     /// @dev This function will transfer the specified amount of tokenT from the contract to the user
     /// and update the user's staked balance.
-    function withdraw(uint256 amount) external {
+    function withdraw(uint128 amount) external {
         if (amount == 0) revert AmountIsZero();
+        address _user = msg.sender;
 
-        _sync(msg.sender);
-        stakedBalances[msg.sender] -= amount;
+        _sync(_user);
+        userInfos[_user].stakedBalance -= amount;
         totalTokensStaked -= amount;
 
         // send tokens to the user
-        STAKED_TOKEN.transfer(msg.sender, amount);
-
-        // TODO: if the user is withdrawing full amount then send him the rewards as well
+        STAKED_TOKEN.safeTransfer(_user, amount);
     }
 
     /// @notice Claim any accrued but unclaimed tokenR rewards
     /// @dev This function will transfer the pending rewards from the contract to the user
     /// and reset the user's pending rewards to zero.
     function claim() external {
-        if (getTotalEarnedReward(msg.sender) == 0) revert NoPendingRewardsToClaim();
+        address _user = msg.sender;
+        if (getTotalEarnedReward(_user) == 0) revert NoPendingRewardsToClaim();
 
-        _sync(msg.sender);
-        uint256 _pendingReward = storedRewardBalances[msg.sender];
-        storedRewardBalances[msg.sender] = 0;
+        _sync(_user);
+        uint256 _pendingReward = userInfos[_user].storedRewardBalance;
+        userInfos[_user].storedRewardBalance = 0;
         totalRewardsDistributed += _pendingReward;
 
-        REWARD_TOKEN.transfer(msg.sender, _pendingReward);
+        REWARD_TOKEN.safeTransfer(_user, _pendingReward);
     }
 
     /// @dev Updates global and user-specific reward state
@@ -126,8 +126,8 @@ contract Staking {
         lastRewardUpdateTime = _lastEffectiveTime();
 
         // Update user-specific reward state
-        storedRewardBalances[user] = _calculateUserReward(user, _updatedAccumulator);
-        userRewardCheckpoints[user] = _updatedAccumulator;
+        userInfos[user].storedRewardBalance = uint128(_calculateUserReward(user, _updatedAccumulator));
+        userInfos[user].rewardCheckpoint = _updatedAccumulator;
     }
 
     /// @notice Calculates the cumulative reward per token staked.
@@ -192,8 +192,12 @@ contract Staking {
 
     // Delta * stake + stored
     function _calculateUserReward(address user, uint256 updatedAccumulator) internal view returns (uint256) {
-        uint256 _delta = updatedAccumulator - userRewardCheckpoints[user];
-        uint256 _newlyAccrued = FullMath.mulDiv(stakedBalances[user], _delta, RAY);
-        return storedRewardBalances[user] + _newlyAccrued;
+        UserInfo memory _userInfo = userInfos[user];
+        uint256 _delta;
+        unchecked {
+            _delta = updatedAccumulator - _userInfo.rewardCheckpoint;
+        }
+        uint256 _newlyAccrued = FullMath.mulDiv(_userInfo.stakedBalance, _delta, RAY);
+        return _userInfo.storedRewardBalance + _newlyAccrued;
     }
 }

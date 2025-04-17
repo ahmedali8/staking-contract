@@ -12,7 +12,7 @@ rm -rf coverage
 forge coverage \
     --report lcov \
     --report summary \
-    --no-match-coverage '(tests|script|node_modules)' \
+    --no-match-coverage '(tests|script|node_modules|tokens)' \
     --ir-minimum # https://github.com/foundry-rs/foundry/issues/3357
 
 # Fix for lcov v2.0+

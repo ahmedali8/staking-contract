@@ -38,7 +38,7 @@ contract Staking_Test is Base_Test {
         // Set Alice as the active user
         resetPrank(users.alice);
 
-        uint256 depositAmount = 100 ether;
+        uint128 depositAmount = 100 ether;
 
         // Approve staking contract to transfer Alice's tokenT
         IERC20(tokenT).approve(address(staking), depositAmount);
@@ -50,7 +50,7 @@ contract Staking_Test is Base_Test {
         staking.deposit(depositAmount);
 
         // Check: Alice's stake is correctly updated
-        uint256 stakedBalance = staking.stakedBalances(users.alice);
+        (uint128 stakedBalance,,) = staking.userInfos(users.alice);
         assertEq(stakedBalance, depositAmount, "Alice's staked balance should match deposit amount");
 
         // Check: totalTokensStaked is updated
@@ -69,7 +69,7 @@ contract Staking_Test is Base_Test {
     function test_WithdrawReducesUserAndTotalStakedBalancesAndPreservesRewards() public {
         resetPrank(users.alice);
 
-        uint256 depositAmount = 100 ether;
+        uint128 depositAmount = 100 ether;
         tokenT.approve(address(staking), depositAmount);
         staking.deposit(depositAmount);
 
@@ -77,20 +77,22 @@ contract Staking_Test is Base_Test {
         vm.warp(block.timestamp + 5);
 
         // Withdraw half
-        uint256 withdrawAmount = 50 ether;
+        uint128 withdrawAmount = 50 ether;
         staking.withdraw(withdrawAmount);
 
         // Check balances
-        assertEq(staking.stakedBalances(users.alice), 50 ether, "Alice's stake should reduce");
+        (uint128 stakedBalance, uint128 pendingReward,) = staking.userInfos(users.alice);
+
+        assertEq(stakedBalance, 50 ether, "Alice's stake should reduce");
         assertEq(staking.totalTokensStaked(), 50 ether, "Total staked should reduce");
 
         // Reward must not be auto-claimed
-        uint256 pending = staking.storedRewardBalances(users.alice);
-        assertGt(pending, 0, "Reward should still be pending after withdraw");
+        assertGt(pendingReward, 0, "Reward should still be pending after withdraw");
 
         // Claim to finalize test
         staking.claim();
-        assertEq(staking.storedRewardBalances(users.alice), 0, "Should be zero after explicit claim");
+        (, uint128 pendingRewardAfterClaim,) = staking.userInfos(users.alice);
+        assertEq(pendingRewardAfterClaim, 0, "Should be zero after explicit claim");
     }
 
     function test_RevertWhen_UserWithdrawsWithoutDeposit() public {
@@ -105,7 +107,7 @@ contract Staking_Test is Base_Test {
     function test_ClaimTransfersAccruedRewardsAndResetsStoredBalance() public {
         resetPrank(users.alice);
 
-        uint256 depositAmount = 100 ether;
+        uint128 depositAmount = 100 ether;
         tokenT.approve(address(staking), depositAmount);
         staking.deposit(depositAmount);
 
@@ -129,7 +131,8 @@ contract Staking_Test is Base_Test {
         assertEq(claimed, expectedReward, "Alice should receive tokenR");
 
         // Assert that storedRewardBalance has been zeroed out
-        assertEq(staking.storedRewardBalances(users.alice), 0, "Pending reward must be zero after claim");
+        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.alice);
+        assertEq(storedRewardBalanceAfterClaim, 0, "Pending reward must be zero after claim");
 
         // Global state remains
         assertEq(staking.totalTokensStaked(), 100 ether, "Global total should remain the same");
@@ -137,33 +140,36 @@ contract Staking_Test is Base_Test {
 
     function test_RewardsCheckpointUpdatesCorrectlyAfterClaimAndReDeposit() public {
         resetPrank(users.alice);
-        uint256 amount = 100 ether;
+        uint128 amount = 100 ether;
         tokenT.approve(address(staking), amount);
         staking.deposit(amount);
 
         vm.warp(block.timestamp + 10);
         staking.claim();
 
-        uint256 checkpointAfterClaim = staking.userRewardCheckpoints(users.alice);
+        (,, uint256 rewardCheckpointAfterClaim) = staking.userInfos(users.alice);
 
         vm.warp(block.timestamp + 5);
 
         tokenT.approve(address(staking), amount);
         staking.deposit(amount);
 
-        uint256 checkpointAfterReDeposit = staking.userRewardCheckpoints(users.alice);
-        assertGt(checkpointAfterReDeposit, checkpointAfterClaim, "Checkpoint should be updated after re-deposit");
+        (,, uint256 rewardCheckpointAfterReDeposit) = staking.userInfos(users.alice);
+        assertGt(
+            rewardCheckpointAfterReDeposit, rewardCheckpointAfterClaim, "Checkpoint should be updated after re-deposit"
+        );
     }
 
     function test_RevertWhen_ClaimIsCalledWithoutAnyPendingRewards() public {
         // Alice has deposited but no rewards have been accrued
         resetPrank(users.alice);
 
-        uint256 depositAmount = 100 ether;
+        uint128 depositAmount = 100 ether;
         tokenT.approve(address(staking), depositAmount);
         staking.deposit(depositAmount);
 
-        assertEq(staking.storedRewardBalances(users.alice), 0, "Alice should have no pending rewards");
+        (, uint128 storedRewardBalance,) = staking.userInfos(users.alice);
+        assertEq(storedRewardBalance, 0, "Alice should have no pending rewards");
 
         vm.expectRevert(abi.encodeWithSelector(Staking.NoPendingRewardsToClaim.selector));
         staking.claim();
@@ -197,7 +203,8 @@ contract Staking_Test is Base_Test {
         assertGt(pending, 0, "Should still be able to claim reward after end");
 
         staking.claim();
-        assertEq(staking.storedRewardBalances(users.sender), 0, "Claim should clear pending rewards");
+        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.sender);
+        assertEq(storedRewardBalanceAfterClaim, 0, "Claim should clear pending rewards");
     }
 
     function test_SingleWeiStakeAccruesNonZeroRewards() public {
@@ -213,7 +220,7 @@ contract Staking_Test is Base_Test {
     function test_RewardSplitBetweenMultipleUsersWithStaggeredDeposits() public {
         // === Time 0 ===
         resetPrank(users.alice);
-        uint256 aliceStake = 100 ether;
+        uint128 aliceStake = 100 ether;
         tokenT.approve(address(staking), aliceStake);
         staking.deposit(aliceStake);
 
@@ -222,7 +229,7 @@ contract Staking_Test is Base_Test {
 
         // === Time 10s ===
         resetPrank(users.bob);
-        uint256 bobStake = 300 ether;
+        uint128 bobStake = 300 ether;
         tokenT.approve(address(staking), bobStake);
         staking.deposit(bobStake);
 
@@ -282,7 +289,7 @@ contract Staking_Test is Base_Test {
     function test_AccurateRewardDistributionAfterGapsInStakingActivity() public {
         // === Time 0: Alice deposits ===
         resetPrank(users.alice);
-        uint256 aliceStake = 100 ether;
+        uint128 aliceStake = 100 ether;
         tokenT.approve(address(staking), aliceStake);
         staking.deposit(aliceStake);
 
@@ -297,7 +304,7 @@ contract Staking_Test is Base_Test {
 
         // === Time 40: Bob deposits ===
         resetPrank(users.bob);
-        uint256 bobStake = 200 ether;
+        uint128 bobStake = 200 ether;
         tokenT.approve(address(staking), bobStake);
         staking.deposit(bobStake);
 
@@ -306,7 +313,7 @@ contract Staking_Test is Base_Test {
 
         // === Time 70: Eve deposits (now Bob + Eve are both staked) ===
         resetPrank(users.eve);
-        uint256 eveStake = 300 ether;
+        uint128 eveStake = 300 ether;
         tokenT.approve(address(staking), eveStake);
         staking.deposit(eveStake);
 
@@ -379,8 +386,8 @@ contract Staking_Test is Base_Test {
     function testFuzz_ClaimedRewardIsProportionalToStakedTime(uint96 rawAmount, uint40 warpTime) public {
         // === Bounds ===
         // Max ONE_MILLION_TOKENS = 1 million tokens (assuming 18 decimals)
-        uint256 amount = bound(uint256(rawAmount), WAD, ONE_MILLION_TOKENS); // at least 1 token
-        uint256 time = bound(uint256(warpTime), ONE_SECOND, 30 days); // at least 1s
+        uint128 amount = uint128(bound(uint256(rawAmount), WAD, ONE_MILLION_TOKENS)); // at least 1 token
+        uint256 time = uint256(bound(uint256(warpTime), ONE_SECOND, 30 days)); // at least 1s
 
         // mint tokens to alice
         tokenT.mint(users.alice, amount);
@@ -406,7 +413,8 @@ contract Staking_Test is Base_Test {
         assertApproxEqAbs(actual, expectedReward, 1, "Claimed reward mismatch");
 
         // Ensure reward balance cleared
-        assertEq(staking.storedRewardBalances(users.alice), 0, "Stored reward not cleared");
+        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.alice);
+        assertEq(storedRewardBalanceAfterClaim, 0, "Stored reward not cleared");
     }
 
     function testFuzz_FairRewardSplitBetweenUsersStakingAtDifferentTimes(
@@ -494,7 +502,8 @@ contract Staking_Test is Base_Test {
         staking.withdraw(amount);
 
         // Check internal state
-        assertEq(staking.stakedBalances(users.sender), 0, "Stake should be 0 after full withdraw");
+        (uint128 stakedBalanceAfterWithdraw,,) = staking.userInfos(users.sender);
+        assertEq(stakedBalanceAfterWithdraw, 0, "Stake should be 0 after full withdraw");
 
         // Rewards should be stored internally
         uint256 rewardRate = staking.REWARD_RATE_PER_SECOND();
@@ -508,6 +517,7 @@ contract Staking_Test is Base_Test {
         assertApproxEqAbs(received, expectedReward, 1, "Withdraw before claim shouldn't affect rewards");
 
         // Final check: pending must be 0
-        assertEq(staking.storedRewardBalances(users.sender), 0, "Reward must be cleared after claim");
+        (, uint128 storedRewardBalanceAfterClaim,) = staking.userInfos(users.sender);
+        assertEq(storedRewardBalanceAfterClaim, 0, "Reward must be cleared after claim");
     }
 }
