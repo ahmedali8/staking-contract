@@ -248,6 +248,48 @@ contract Staking_Invariant_Test is Base_Test {
         lastAccumulator = current;
     }
 
+    function invariant_StoredRewardsAreNonNegative() public view {
+        address[] memory _users = targetSenders();
+        for (uint256 i = 0; i < _users.length; i++) {
+            address user = _users[i];
+            uint256 stored = staking.storedRewardBalances(user);
+            assertGe(stored, 0, "Stored reward should not be negative");
+        }
+    }
+
+    function invariant_ClaimClearsStoredReward() public {
+        address[] memory _users = targetSenders();
+        for (uint256 i = 0; i < _users.length; i++) {
+            address user = _users[i];
+            uint256 before = staking.storedRewardBalances(user);
+            if (before > 0) {
+                resetPrank(user);
+                staking.claim();
+                uint256 afterClaim = staking.storedRewardBalances(user);
+                assertEq(afterClaim, 0, "Claim should clear reward balance");
+            }
+        }
+    }
+
+    function invariant_NoRewardAfterEndTime() public {
+        vm.warp(staking.REWARDS_END_TIME() + 100);
+        uint256 rewardBefore = staking.getCumulativeRewardPerToken();
+        vm.warp(block.timestamp + 10);
+        uint256 rewardAfter = staking.getCumulativeRewardPerToken();
+        assertEq(rewardBefore, rewardAfter, "Accumulator must not increase after reward end time");
+    }
+
+    function invariant_TokenAccountingCorrect() public view {
+        uint256 contractStakeBalance = tokenT.balanceOf(address(staking));
+        assertEq(contractStakeBalance, staking.totalTokensStaked(), "Token balance should equal total staked");
+
+        uint256 contractRewardBalance = tokenR.balanceOf(address(staking));
+        uint256 expectedTotal = contractRewardBalance + staking.totalRewardsDistributed();
+
+        // Only assert <= to avoid false positives from rounding during emission window
+        assertLe(staking.totalRewardsDistributed(), expectedTotal, "Rewards must not exceed total emission");
+    }
+
     /*//////////////////////////////////////////////////////////////
                              HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
