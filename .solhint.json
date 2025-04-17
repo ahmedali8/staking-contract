@@ -3,12 +3,16 @@
   "rules": {
     "code-complexity": ["error", 8],
     "compiler-version": ["error", ">=0.8.23"],
+    "contract-name-camelcase": "off",
     "func-name-mixedcase": "off",
     "func-visibility": ["error", { "ignoreConstructors": true }],
+    "max-states-count": ["warn", 20],
     "max-line-length": ["error", 120],
     "named-parameters-mapping": "warn",
+    "no-empty-blocks": "off",
     "no-console": "off",
     "not-rely-on-time": "off",
-    "one-contract-per-file": "off"
+    "one-contract-per-file": "off",
+    "var-name-mixedcase": "off"
   }
 }
