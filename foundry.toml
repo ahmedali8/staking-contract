@@ -5,7 +5,6 @@
   block_timestamp = 1_738_368_000 # Feb 1, 2025 at 00:00 GMT
   bytecode_hash = "none"
   evm_version = "shanghai"
-  fuzz = { runs = 1_000 }
   gas_reports = ["*"]
   optimizer = true
   optimizer_runs = 10_000
@@ -14,6 +13,16 @@
   solc = "0.8.29"
   src = "src"
   test = "tests"
+
+  [profile.default.fuzz]
+    runs = 10_000
+
+  [profile.default.invariant]
+    # call_override = false # Override unsafe external calls to perform reentrancy checks
+    depth = 500           # Number of calls executed in one run
+    fail_on_revert = true
+    runs = 100
+    show_metrics = true
 
 [profile.ci]
   fuzz = { runs = 10_000 }
