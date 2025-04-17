@@ -1,4 +1,83 @@
-# Vault Smart Contracts
+# Staking Contract
+
+This repository contains a staking vault system designed for continuous, fair, and proportional distribution of ERC-20
+reward tokens to users who lock/stake another ERC-20 token over a fixed duration. The system tracks both global and
+per-user state to ensure accurate reward calculation.
+
+## Table of Contents
+
+- [Background](#background)
+- [How It Works](#how-it-works)
+- [Key Features](#key-features)
+- [Example Scenarios](#example-scenarios)
+- [Getting Started](#getting-started)
+- [Project Structure](#project-structure)
+- [Development](#development)
+- [Testing](#testing)
+- [License](#license)
+
+## Background
+
+> A protocol wants to distribute 1 million reward tokens (`tokenR`) over 1 year to users who stake `tokenT`. Rewards are
+> distributed **continuously** and **proportionally** to the amount of `tokenT` staked. Users should be able to claim
+> rewards at any time without withdrawing their stake.
+
+The smart contract implements this requirement using an accumulator-based approach that ensures precision and
+efficiency, even as new users join or exit the staking pool.
+
+## How It Works
+
+- Users stake `tokenT` into the contract
+- Rewards (`tokenR`) are distributed continuously over time to all active stakers
+- The distribution is **proportional to each user's share** of the total stake
+- Users can **claim rewards** at any time without withdrawing their stake
+
+Internally, the contract tracks a `rewardAccumulator` value that captures the amount of `tokenR` per `tokenT` staked.
+Each user has a `rewardCheckpoint` that notes the last value they interacted with.
+
+## Key Features
+
+- Continuous reward emission
+- Supports multiple users entering and exiting at arbitrary times
+- Accumulates rewards precisely using `FullMath.mulDiv` (from Uniswap V4)
+- Low gas overhead through packed structs
+- Withdraw without auto-claiming
+- Safe and secure with `ReentrancyGuard`
+
+## Example Scenarios
+
+### Simple Two-User Scenario
+
+```
+Time (s):   0      10     20
+User A:     stake         claim
+User B:            stake  claim
+
+Reward Rate: 1 tokenR/sec
+
+0–10s: Only A staked 100 tokenT → 10 tokenR → All goes to A
+10–20s: A has 100, B has 300 → 10 tokenR
+    A gets 2.5 (100/400), B gets 7.5 (300/400)
+
+Result:
+- A gets 10 + 2.5 = 12.5 tokenR
+- B gets 7.5 tokenR
+```
+
+### Three Users with Gaps
+
+```
+Time (s):   0      30     40     70     100
+Alice:      stake  exit
+Bob:                      stake        claim
+Eve:                             stake  claim
+
+Reward Rate: 31.709791983764586e15 tokenR/sec
+
+Alice earns 30s of full rewards
+Bob earns 30s alone + 30s shared (40%)
+Eve earns 30s shared (60%)
+```
 
 ## Getting Started
 
@@ -6,115 +85,85 @@
 bun install
 ```
 
-If this is your first time with Foundry, check out the
-[installation](https://github.com/foundry-rs/foundry#installation) instructions.
-
-## Usage
-
-This is a list of the most frequently needed commands.
-
-### Build
-
-Build the contracts:
+If you're new to [Foundry](https://github.com/foundry-rs/foundry):
 
 ```sh
-forge build
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
 ```
 
-### Clean
+## Project Structure
 
-Delete the build artifacts and cache directories:
+- `src/`
+  - `Staking.sol` — Main staking logic
+  - `interfaces/IStaking.sol` — Interface with documentation
+  - `types/DataTypes.sol` — Packed `UserInfo` struct
+  - `libraries/Errors.sol` — Custom errors
+- `test/` — Foundry tests (fuzz, invariant)
+- `script/` — deployment scripts
 
-```sh
-forge clean
-```
+## Development
 
 ### Compile
 
-Compile the contracts:
-
 ```sh
 forge build
 ```
 
-### Coverage
-
-Get a test coverage report:
-
-```sh
-forge coverage
-```
-
-### Deploy
-
-Deploy to Anvil:
-
-```sh
-forge script script/Deploy.s.sol --broadcast --fork-url http://localhost:8545
-```
-
-For this script to work, you need to have a `MNEMONIC` environment variable set to a valid
-[BIP39 mnemonic](https://iancoleman.io/bip39/).
-
-For instructions on how to deploy to a testnet or mainnet, check out the
-[Solidity Scripting](https://book.getfoundry.sh/tutorials/solidity-scripting.html) tutorial.
-
 ### Format
-
-Format the contracts:
 
 ```sh
 forge fmt
 ```
 
-### Gas Usage
-
-Get a gas report:
+### Clean
 
 ```sh
-forge test --gas-report
+forge clean
 ```
 
 ### Lint
-
-Lint the contracts:
 
 ```sh
 bun run lint
 ```
 
-### Test
+### Deploy (Anvil local fork)
 
-Run the tests:
+```sh
+forge script script/Deploy.s.sol --broadcast --fork-url http://localhost:8545
+```
+
+> Requires a `MNEMONIC` environment variable for signer.
+
+## Testing
+
+### Unit + Fuzz Tests
 
 ```sh
 forge test
 ```
 
-### Test Coverage
-
-Generate test coverage and output result to the terminal:
+### Gas Report
 
 ```sh
-bun run test:coverage
+forge test --gas-report
 ```
 
-### Test Coverage Report
+### Coverage (basic)
 
-Generate test coverage with lcov report (you'll have to open the `./coverage/index.html` file in your browser, to do so
-simply copy paste the path):
+```sh
+forge coverage
+```
+
+### Coverage Report (HTML)
 
 ```sh
 bun run test:coverage:report
 ```
 
-> [!NOTE]
+> Requires [lcov](https://github.com/linux-test-project/lcov). On macOS:
 >
-> This command requires you to have [`lcov`](https://github.com/linux-test-project/lcov) installed on your machine. On
-> macOS, you can install it with Homebrew: `brew install lcov`.
-
-Period | Who | Stake | Reward Calculation | Result (wei) 0s - 10s | Alice | 100e18 | 10s _ 31709791983764586 |
-317097919837645860 10s - 20s | Alice | 100e18 | (10s _ 31709791983764586 _ 100e18 / 400e18) | 79274479959411465 10s -
-20s | Bob | 300e18 | (10s _ 31709791983764586 \* 300e18 / 400e18) | 237823439878234395 | | | | Total | Alice | |
-317097919837645860 + 79274479959411465 | 396372399797057325 Total | Bob | | 237823439878234395 | 237823439878234395
-Distributed | All | | 396372399797057325 + 237823439878234395 | 634195839675291720
+> ```sh
+> brew install lcov
+> ```
