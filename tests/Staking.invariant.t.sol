@@ -234,7 +234,7 @@ contract Staking_Invariant_Test is Base_Test {
                             INVARIANTS
     //////////////////////////////////////////////////////////////*/
 
-    function invariant_SumOfStakedEqualsTotal() public view {
+    function invariant_TotalUserStakesMatchGlobalStakedAmount() public view {
         address[] memory _users = targetSenders();
         uint256 total = 0;
         for (uint8 i = 0; i < _users.length; i++) {
@@ -246,13 +246,13 @@ contract Staking_Invariant_Test is Base_Test {
         assertApproxEqAbs(total, staking.totalTokensStaked(), 1, "Total staked tokens mismatch");
     }
 
-    function invariant_AccumulatorDoesNotDecrease() public {
+    function invariant_GlobalRewardAccumulatorNeverDecreases() public {
         uint256 current = staking.getCumulativeRewardPerToken();
         assertGe(current, lastAccumulator, "Reward accumulator should not decrease");
         lastAccumulator = current;
     }
 
-    function invariant_StoredRewardsAreNonNegative() public view {
+    function invariant_UserStoredRewardIsAlwaysPositiveOrZero() public view {
         address[] memory _users = targetSenders();
         for (uint256 i = 0; i < _users.length; i++) {
             address user = _users[i];
@@ -261,7 +261,7 @@ contract Staking_Invariant_Test is Base_Test {
         }
     }
 
-    function invariant_ClaimClearsStoredReward() public {
+    function invariant_ClaimOperationResetsStoredUserRewardBalance() public {
         address[] memory _users = targetSenders();
         for (uint256 i = 0; i < _users.length; i++) {
             address user = _users[i];
@@ -275,7 +275,7 @@ contract Staking_Invariant_Test is Base_Test {
         }
     }
 
-    function invariant_NoRewardAfterEndTime() public {
+    function invariant_RewardAccumulatorStopsIncreasingAfterRewardEndTime() public {
         vm.warp(staking.REWARDS_END_TIME() + 100);
         uint256 rewardBefore = staking.getCumulativeRewardPerToken();
         vm.warp(block.timestamp + 10);
@@ -283,7 +283,7 @@ contract Staking_Invariant_Test is Base_Test {
         assertEq(rewardBefore, rewardAfter, "Accumulator must not increase after reward end time");
     }
 
-    function invariant_TokenAccountingCorrect() public view {
+    function invariant_ContractTokenBalancesMatchStakingState() public view {
         uint256 contractStakeBalance = tokenT.balanceOf(address(staking));
         assertEq(contractStakeBalance, staking.totalTokensStaked(), "Token balance should equal total staked");
 
@@ -294,13 +294,13 @@ contract Staking_Invariant_Test is Base_Test {
         assertLe(staking.totalRewardsDistributed(), expectedTotal, "Rewards must not exceed total emission");
     }
 
-    function invariant_StakedTokenBalanceMatchesAccounting() public view {
+    function invariant_StakedTokenBalanceOnContractMatchesGlobalTotal() public view {
         uint256 actualBalance = tokenT.balanceOf(address(staking));
         uint256 expectedBalance = staking.totalTokensStaked();
         assertEq(actualBalance, expectedBalance, "Staking contract tokenT balance mismatch");
     }
 
-    function invariant_RewardTokenAccountingIsConsistent() public view {
+    function invariant_RewardTokenDistributionMatchesInitialSupply() public view {
         uint256 currentBalance = tokenR.balanceOf(address(staking));
         uint256 distributed = staking.totalRewardsDistributed();
         uint256 total = currentBalance + distributed;
