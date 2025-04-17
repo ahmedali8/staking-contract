@@ -4,6 +4,7 @@ pragma solidity 0.8.29;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { UserInfo } from "./types/DataTypes.sol";
 
 // Example:
@@ -20,7 +21,7 @@ import { UserInfo } from "./types/DataTypes.sol";
 //   For 10-20 seconds: 10 * 300/400 = 7.5 tokenR
 //   Total: 7.5 tokenR
 
-contract Staking {
+contract Staking is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 private constant RAY = 1e27;
@@ -74,7 +75,7 @@ contract Staking {
     /// @param amount Amount of tokenT to stake
     /// @dev This function will transfer the specified amount of tokenT from the user to the contract
     /// and update the user's staked balance.
-    function deposit(uint128 amount) external {
+    function deposit(uint128 amount) external nonReentrant {
         if (amount == 0) revert AmountIsZero();
         address _user = msg.sender;
 
@@ -90,7 +91,7 @@ contract Staking {
     /// @param amount Amount of tokenT to withdraw
     /// @dev This function will transfer the specified amount of tokenT from the contract to the user
     /// and update the user's staked balance.
-    function withdraw(uint128 amount) external {
+    function withdraw(uint128 amount) external nonReentrant {
         if (amount == 0) revert AmountIsZero();
         address _user = msg.sender;
 
@@ -105,7 +106,7 @@ contract Staking {
     /// @notice Claim any accrued but unclaimed tokenR rewards
     /// @dev This function will transfer the pending rewards from the contract to the user
     /// and reset the user's pending rewards to zero.
-    function claim() external {
+    function claim() external nonReentrant {
         address _user = msg.sender;
         if (getTotalEarnedReward(_user) == 0) revert NoPendingRewardsToClaim();
 
