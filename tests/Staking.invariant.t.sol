@@ -192,6 +192,7 @@ contract Staking_Invariant_Test is Base_Test {
 
     Staking_Invariant_Handler internal handler;
     uint256 internal lastAccumulator;
+    uint256 internal initialRewardSupply;
 
     /*//////////////////////////////////////////////////////////////
                              MODIFIERS
@@ -224,6 +225,9 @@ contract Staking_Invariant_Test is Base_Test {
         _targetSender(users.alice);
         _targetSender(users.bob);
         _targetSender(users.eve);
+
+        // Record the initial reward token supply allocated to the contract
+        initialRewardSupply = tokenR.balanceOf(address(staking));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -288,6 +292,20 @@ contract Staking_Invariant_Test is Base_Test {
 
         // Only assert <= to avoid false positives from rounding during emission window
         assertLe(staking.totalRewardsDistributed(), expectedTotal, "Rewards must not exceed total emission");
+    }
+
+    function invariant_StakedTokenBalanceMatchesAccounting() public view {
+        uint256 actualBalance = tokenT.balanceOf(address(staking));
+        uint256 expectedBalance = staking.totalTokensStaked();
+        assertEq(actualBalance, expectedBalance, "Staking contract tokenT balance mismatch");
+    }
+
+    function invariant_RewardTokenAccountingIsConsistent() public view {
+        uint256 currentBalance = tokenR.balanceOf(address(staking));
+        uint256 distributed = staking.totalRewardsDistributed();
+        uint256 total = currentBalance + distributed;
+
+        assertEq(total, initialRewardSupply, "Reward token accounting mismatch");
     }
 
     /*//////////////////////////////////////////////////////////////
