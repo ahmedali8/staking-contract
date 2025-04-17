@@ -6,8 +6,8 @@ import { BaseScript } from "./Base.s.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { Staking } from "../src/Staking.sol";
-import { TokenR } from "../src/TokenR.sol";
-import { TokenT } from "../src/TokenT.sol";
+import { TokenR } from "../src/tokens/TokenR.sol";
+import { TokenT } from "../src/tokens/TokenT.sol";
 
 /// @dev See the Solidity Scripting tutorial: https://book.getfoundry.sh/guides/scripting-with-solidity
 contract Deploy is BaseScript {
