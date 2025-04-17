@@ -6,6 +6,7 @@ import { stdError } from "forge-std/src/StdError.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import { Staking } from "../src/Staking.sol";
+import { Errors } from "../src/libraries/Errors.sol";
 
 contract Staking_Test is Base_Test {
     function setUp() public override {
@@ -30,7 +31,7 @@ contract Staking_Test is Base_Test {
     }
 
     function test_RevertWhen_UserDepositsZeroAmount() public {
-        vm.expectRevert(abi.encodeWithSelector(Staking.AmountIsZero.selector));
+        vm.expectRevert(abi.encodeWithSelector(Errors.AmountIsZero.selector));
         staking.deposit(0);
     }
 
@@ -171,7 +172,7 @@ contract Staking_Test is Base_Test {
         (, uint128 storedRewardBalance,) = staking.userInfos(users.alice);
         assertEq(storedRewardBalance, 0, "Alice should have no pending rewards");
 
-        vm.expectRevert(abi.encodeWithSelector(Staking.NoPendingRewardsToClaim.selector));
+        vm.expectRevert(abi.encodeWithSelector(Errors.NoPendingRewardsToClaim.selector));
         staking.claim();
     }
 

@@ -10,11 +10,9 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Staking } from "../src/Staking.sol";
 import { UserInfo } from "../src/types/DataTypes.sol";
 import { console2 } from "forge-std/src/console2.sol";
+import { Constants } from "./utils/Constants.sol";
 
-uint256 constant WAD = 1e18;
-uint256 constant ONE_MILLION_TOKENS = 1_000_000 ether;
-
-contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvariant {
+contract Staking_Invariant_Handler is CommonBase, StdCheats, StdUtils, StdInvariant, Constants {
     /*//////////////////////////////////////////////////////////////
                                VARIABLES
     //////////////////////////////////////////////////////////////*/
