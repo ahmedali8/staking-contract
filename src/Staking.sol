@@ -4,6 +4,7 @@ pragma solidity 0.8.29;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { FullMath } from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { UserInfo } from "./types/DataTypes.sol";
 
 // Example:
 // Alice stakes 100 tokenT at second 0
@@ -50,15 +51,7 @@ contract Staking {
     /// @notice Total amount of rewards that have been distributed
     uint256 public totalRewardsDistributed;
 
-    // staked tokenT balance
-    mapping(address user => uint256 stakedAmount) public stakedBalances;
-
-    // unclaimed, accrued rewards in tokenR
-    // How much reward this user has earned up until the last time we updated their state?
-    mapping(address user => uint256 rewardAmount) public storedRewardBalances;
-
-    // last recorded rewardAccumulator for reward accounting
-    mapping(address user => uint256 checkpoint) public userRewardCheckpoints;
+    mapping(address user => UserInfo info) public userInfos;
 
     error AmountIsZero();
     error NoPendingRewardsToClaim();
@@ -81,12 +74,12 @@ contract Staking {
     /// @param amount Amount of tokenT to stake
     /// @dev This function will transfer the specified amount of tokenT from the user to the contract
     /// and update the user's staked balance.
-    function deposit(uint256 amount) external {
+    function deposit(uint128 amount) external {
         if (amount == 0) revert AmountIsZero();
         address _user = msg.sender;
 
         _sync(_user);
-        stakedBalances[_user] += amount;
+        userInfos[_user].stakedBalance += amount;
         totalTokensStaked += amount;
 
         // take tokens from the user
@@ -97,18 +90,16 @@ contract Staking {
     /// @param amount Amount of tokenT to withdraw
     /// @dev This function will transfer the specified amount of tokenT from the contract to the user
     /// and update the user's staked balance.
-    function withdraw(uint256 amount) external {
+    function withdraw(uint128 amount) external {
         if (amount == 0) revert AmountIsZero();
         address _user = msg.sender;
 
         _sync(_user);
-        stakedBalances[_user] -= amount;
+        userInfos[_user].stakedBalance -= amount;
         totalTokensStaked -= amount;
 
         // send tokens to the user
         STAKED_TOKEN.safeTransfer(_user, amount);
-
-        // TODO: if the user is withdrawing full amount then send him the rewards as well
     }
 
     /// @notice Claim any accrued but unclaimed tokenR rewards
@@ -119,8 +110,8 @@ contract Staking {
         if (getTotalEarnedReward(_user) == 0) revert NoPendingRewardsToClaim();
 
         _sync(_user);
-        uint256 _pendingReward = storedRewardBalances[_user];
-        storedRewardBalances[_user] = 0;
+        uint256 _pendingReward = userInfos[_user].storedRewardBalance;
+        userInfos[_user].storedRewardBalance = 0;
         totalRewardsDistributed += _pendingReward;
 
         REWARD_TOKEN.safeTransfer(_user, _pendingReward);
@@ -135,8 +126,8 @@ contract Staking {
         lastRewardUpdateTime = _lastEffectiveTime();
 
         // Update user-specific reward state
-        storedRewardBalances[user] = _calculateUserReward(user, _updatedAccumulator);
-        userRewardCheckpoints[user] = _updatedAccumulator;
+        userInfos[user].storedRewardBalance = uint128(_calculateUserReward(user, _updatedAccumulator));
+        userInfos[user].rewardCheckpoint = _updatedAccumulator;
     }
 
     /// @notice Calculates the cumulative reward per token staked.
@@ -201,11 +192,12 @@ contract Staking {
 
     // Delta * stake + stored
     function _calculateUserReward(address user, uint256 updatedAccumulator) internal view returns (uint256) {
+        UserInfo memory _userInfo = userInfos[user];
         uint256 _delta;
         unchecked {
-            _delta = updatedAccumulator - userRewardCheckpoints[user];
+            _delta = updatedAccumulator - _userInfo.rewardCheckpoint;
         }
-        uint256 _newlyAccrued = FullMath.mulDiv(stakedBalances[user], _delta, RAY);
-        return storedRewardBalances[user] + _newlyAccrued;
+        uint256 _newlyAccrued = FullMath.mulDiv(_userInfo.stakedBalance, _delta, RAY);
+        return _userInfo.storedRewardBalance + _newlyAccrued;
     }
 }
